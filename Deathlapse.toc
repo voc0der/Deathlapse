@@ -1,0 +1,10 @@
+## Interface: 20505
+## Title: Deathlapse
+## Notes: Death timeline — visualises the last 20 seconds before you died as a horizontal strip of damage and heal markers.
+## Author: voc0der
+## Version: 1.0.0
+## X-Website: https://github.com/voc0der/Deathlapse
+## X-Curse-Project-ID:
+## SavedVariables: DeathlapseDB
+
+Deathlapse.lua

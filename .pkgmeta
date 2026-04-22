@@ -1,0 +1,20 @@
+package-as: Deathlapse
+
+enable-nolib-creation: no
+
+manual-changelog:
+  filename: CHANGELOG.md
+  markup-type: markdown
+
+ignore:
+  - CHANGELOG.md
+  - CONTRIBUTING.md
+  - LICENSE
+  - RELEASING.md
+  - README.md
+  - assets
+  - tests
+  - .github
+  - .gitignore
+
+wowi-archive-previous: no
