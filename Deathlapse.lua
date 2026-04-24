@@ -652,9 +652,9 @@ local function LayoutTimelineFrame(frame)
 
     if frame.yLabels then
         for _, entry in ipairs(frame.yLabels) do
-            local yPos = -layout.chartTop - (1 - entry.pct / 100) * layout.chartH + 4
+            local yPos = -(1 - entry.pct / 100) * layout.chartH + 4
             entry.fs:ClearAllPoints()
-            entry.fs:SetPoint("TOPRIGHT", frame, "TOPLEFT", CHART_LEFT - 4, yPos)
+            entry.fs:SetPoint("TOPRIGHT", chart, "TOPLEFT", CHART_LEFT - 4, yPos)
         end
     end
 
@@ -754,9 +754,9 @@ local function CreateTimelineFrame()
     -- Y-axis labels (pre-created, static)
     f.yLabels = {}
     for _, pct in ipairs({100, 75, 50, 25, 0}) do
-        local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        local yPos = chartY - (1 - pct/100) * layout.chartH + 4
-        lbl:SetPoint("TOPRIGHT", f, "TOPLEFT", CHART_LEFT - 2, yPos)
+        local lbl = chart:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
+        local yPos = -(1 - pct/100) * layout.chartH + 4
+        lbl:SetPoint("TOPRIGHT", chart, "TOPLEFT", CHART_LEFT - 2, yPos)
         lbl:SetText(pct .. "%")
         f.yLabels[#f.yLabels + 1] = {fs = lbl, pct = pct}
     end
