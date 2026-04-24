@@ -25,20 +25,6 @@ Current version: `1.1.2`
 - **Clip summary** — shows how many seconds the visible death sequence spans.
 - **Time labels** — seconds before death for key columns; labels thin out automatically on narrow frames.
 
-## Color Reference
-
-| School | Color |
-|--------|-------|
-| Physical | Orange-red |
-| Holy | Gold |
-| Fire | Orange |
-| Nature | Green |
-| Frost | Blue |
-| Shadow | Purple |
-| Arcane | Pink |
-| Overkill | Bright red |
-| Heal | Green |
-
 ## Install
 
 1. Download the latest release from [GitHub](https://github.com/voc0der/Deathlapse/releases/latest) or [CurseForge](https://www.curseforge.com/wow/addons/deathlapse).
