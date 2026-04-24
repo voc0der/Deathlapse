@@ -4,7 +4,7 @@
 ## Author: voc0der
 ## Version: 1.1.2
 ## X-Website: https://github.com/voc0der/Deathlapse
-## X-Curse-Project-ID:
+## X-Curse-Project-ID: 1523591
 ## SavedVariables: DeathlapseDB
 
 Deathlapse.lua

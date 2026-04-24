@@ -18,7 +18,7 @@ Before automated release can work end-to-end, configure:
 2. GitHub Actions secret `CF_API_KEY`
    - CurseForge API token used by `BigWigsMods/packager`
 3. CurseForge project metadata in addon TOC
-   - Add `## X-Curse-Project-ID: <your_project_id>` to `Deathlapse.toc`
+   - `## X-Curse-Project-ID: 1523591` is already set in `Deathlapse.toc`
    - Without this, packager can still build archives but cannot upload to CurseForge
 
 ## Release Process
