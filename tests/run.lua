@@ -205,6 +205,27 @@ local hpB2, hpA2 = I.ComputeHpTrajectory(ok_groups, 10000)
 ok(approx(hpB2[1], 0.30, 0.01), "overkill: hpBefore = (8000-5000)/10000 = 0.30")
 
 -- ============================================================================
+-- ClipGroupsToRelevantWindow
+-- ============================================================================
+print("\n-- ClipGroupsToRelevantWindow --")
+local clipGroups = {
+    {time=80, totalAmount=1000, overkill=0, isHeal=false},
+    {time=82, totalAmount=1000, overkill=0, isHeal=true, overheal=100},
+    {time=94, totalAmount=4000, overkill=0, isHeal=false},
+    {time=99, totalAmount=6000, overkill=0, isHeal=false},
+}
+local clipped, startTime = I.ClipGroupsToRelevantWindow(clipGroups, 10000)
+ok(#clipped == 2, "clips older events before latest full-health point")
+ok(clipped[1].time == 94 and startTime == 94, "clip start is first relevant damage")
+
+local noClipGroups = {
+    {time=90, totalAmount=1000, overkill=0, isHeal=false},
+    {time=99, totalAmount=2000, overkill=0, isHeal=false},
+}
+local unclipped, noClipStart = I.ClipGroupsToRelevantWindow(noClipGroups, 10000)
+ok(#unclipped == 2 and noClipStart == 90, "keeps full window when HP never reconstructs to full")
+
+-- ============================================================================
 -- FindKiller
 -- ============================================================================
 print("\n-- FindKiller --")

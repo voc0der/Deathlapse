@@ -1,5 +1,19 @@
 ## [Unreleased]
 
+## [1.1.1] - 2026-04-24
+
+### Added
+- Resizable death recap frame with saved dimensions and `/dl reset`
+- ElvUI skin detection for the recap frame when ElvUI is loaded
+- Full-health/top-off clipping so the recap shows the meaningful final window up to 20 seconds
+- Clip summary line showing total damage and visible sequence duration
+- Test coverage for clipped death windows
+
+### Changed
+- Widened the default recap frame and made chart geometry respond to frame size
+- Softened damage/heal/HP colors and grid opacity
+- Reduced footer overlap by scaling icons, embedding hit counts in icons, and thinning time labels on dense charts
+
 ## [1.1.0] - 2026-04-23
 
 ### Changed

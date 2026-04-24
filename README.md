@@ -2,9 +2,9 @@
 
 A death-recap timeline for WoW TBC Anniversary Classic.
 
-When you die, a horizontal strip appears showing everything that hit you — and healed you — during the 20 seconds before it happened. Each bar's height is proportional to the hit size. Hover any bar to see the source, spell, amount, and timing. The panel hides automatically when you're alive again.
+When you die, a waterfall chart appears showing the meaningful final stretch of damage and healing before it happened, up to 20 seconds. If the addon can tell you were recently topped off, it clips older noise and starts from that full-health point. Hover any column to see the source, spell, amount, and timing. The panel hides automatically when you're alive again.
 
-The entire addon lives on the minimap. A small skull button orbits it; click it to toggle the panel or drag it to reposition. A red dot appears on the button when death data is available.
+The entire addon lives on the minimap. A small skull button orbits it; click it to toggle the panel or drag it to reposition. A red dot appears on the button when death data is available. The recap frame can be moved and resized from the lower-right grip; ElvUI users get the ElvUI frame skin when available.
 
 ## Installation
 
@@ -28,17 +28,18 @@ Slash commands via `/deathlapse` or `/dl`:
 | `clear` | Clear the current death record |
 | `minimap` | Toggle minimap button visibility |
 | `autoshow` | Toggle auto-show on death (default: on) |
+| `reset` | Reset recap position and size |
 | `test` | Show a fake timeline for testing the UI |
 | `help` | List commands |
 
 ## What the Timeline Shows
 
-- **Above the axis** — incoming damage. Color indicates school (Physical, Fire, Shadow, Frost, Nature, Holy, Arcane). Overkill events are bright red.
-- **Below the axis** — incoming heals. Green.
-- **Bar height** — logarithmic scale; taller = more damage or healing.
-- **Wider bars** — critical hits.
+- **Blue columns** — reconstructed HP remaining after each event.
+- **Red caps** — damage taken. Overkill events are brighter red.
+- **Green caps** — healing received. Tooltips also show overheal when the combat log reports it.
 - **Header** — killer name, spell used, total hits, and totals for damage and healing.
-- **Time axis** — left edge = 20 seconds before death, right edge = death moment.
+- **Clip summary** — shows how many seconds the visible death sequence spans.
+- **Time labels** — seconds before death for key columns; labels thin out automatically on narrow frames.
 
 ## Color Reference
 

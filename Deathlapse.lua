@@ -2,7 +2,7 @@
 -- Death recap for TBC Anniversary Classic.
 -- On death shows a waterfall HP chart (HotS Recap style): each column is one
 -- hit-group, the blue bar is HP remaining, the red cap is damage taken,
--- green cap for heals.  Spell icons with source names appear below each column.
+-- green cap for heals. Spell icons and compact time labels sit below each column.
 
 local addonName = "Deathlapse"
 Deathlapse = {}
@@ -12,25 +12,35 @@ Deathlapse = {}
 -- ============================================================================
 
 local TIMELINE_DURATION  = 20
+local FULL_HP_EPS        = 0.995
 local BUFFER_CAPACITY    = 500
 local BUFFER_PRUNE_AGE   = 25
 
 local GROUP_MERGE_WINDOW = 1.0   -- same spell+source within this many seconds → one column
 local MAX_GROUPS         = 28    -- cap columns; oldest groups are dropped when exceeded
 
-local FRAME_W            = 560
+local FRAME_DEFAULT_W    = 760
+local FRAME_MIN_W        = 560
+local FRAME_MAX_W        = 1120
 local FRAME_HEADER_H     = 24
-local FRAME_SUMMARY_H    = 26
-local CHART_LEFT         = 36   -- width of Y-label strip
-local CHART_RIGHT        = 10
-local CHART_H            = 130  -- height of the HP bar area
-local ICON_ROW_H         = 28
-local TIME_ROW_H         = 16
-local FRAME_H            = FRAME_HEADER_H + FRAME_SUMMARY_H + CHART_H + ICON_ROW_H + TIME_ROW_H + 14
+local FRAME_SUMMARY_H    = 52
+local CHART_LEFT         = 42   -- width of Y-label strip
+local CHART_RIGHT        = 16
+local CHART_H            = 170  -- default height of the HP bar area
+local CHART_MIN_H        = 130
+local ICON_ROW_H         = 30
+local TIME_ROW_H         = 18
+local FRAME_BOTTOM_PAD   = 18
+local FRAME_DEFAULT_H    = FRAME_HEADER_H + FRAME_SUMMARY_H + CHART_H + ICON_ROW_H + TIME_ROW_H + FRAME_BOTTOM_PAD
+local FRAME_MIN_H        = FRAME_HEADER_H + FRAME_SUMMARY_H + CHART_MIN_H + ICON_ROW_H + TIME_ROW_H + FRAME_BOTTOM_PAD
+local FRAME_MAX_H        = 560
 
-local CHART_W            = FRAME_W - CHART_LEFT - CHART_RIGHT   -- 514 px
+local FRAME_W            = FRAME_DEFAULT_W
+local FRAME_H            = FRAME_DEFAULT_H
+local CHART_W            = FRAME_W - CHART_LEFT - CHART_RIGHT
 local MIN_COL_W          = 18
-local ICON_SIZE          = 22
+local ICON_MIN_SIZE      = 14
+local ICON_MAX_SIZE      = 24
 
 local MELEE_ICON         = "Interface\\Icons\\Ability_MeleeDamage"
 local ENV_ICON           = "Interface\\Icons\\Spell_Nature_Drowning"
@@ -46,10 +56,10 @@ local SCHOOL_COLORS = {
     [0x20] = {0.52, 0.10, 0.87},
     [0x40] = {0.88, 0.25, 0.99},
 }
-local COLOR_HP_BLUE   = {0.20, 0.47, 0.80}
-local COLOR_DMG_RED   = {0.80, 0.13, 0.13}
-local COLOR_HEAL_GRN  = {0.13, 0.75, 0.27}
-local COLOR_HP_LINE   = {1.00, 1.00, 1.00}
+local COLOR_HP_BLUE   = {0.13, 0.34, 0.62}
+local COLOR_DMG_RED   = {0.72, 0.12, 0.13}
+local COLOR_HEAL_GRN  = {0.16, 0.62, 0.30}
+local COLOR_HP_LINE   = {0.88, 0.92, 1.00}
 
 local DAMAGE_SUBEVENTS = {
     SWING_DAMAGE=true, RANGE_DAMAGE=true,
@@ -68,6 +78,7 @@ local eventBuffer   = {}
 local deathSnapshot = nil   -- raw events
 local deathGroups   = nil   -- grouped columns
 local deathTime     = nil
+local deathWindowStart = nil
 local killerName    = nil
 local killerSpell   = nil
 local minimapButton = nil
@@ -97,6 +108,108 @@ end
 local function SetSolidColor(tex, r, g, b, a)
     if tex.SetColorTexture then tex:SetColorTexture(r, g, b, a)
     else tex:SetTexture(r, g, b, a) end
+end
+
+local function ClampValue(v, lo, hi)
+    if v < lo then return lo end
+    if v > hi then return hi end
+    return v
+end
+
+local function GetLayout(frameW, frameH)
+    frameW = ClampValue(math.floor((frameW or FRAME_DEFAULT_W) + 0.5), FRAME_MIN_W, FRAME_MAX_W)
+    frameH = ClampValue(math.floor((frameH or FRAME_DEFAULT_H) + 0.5), FRAME_MIN_H, FRAME_MAX_H)
+
+    local chartH = frameH - FRAME_HEADER_H - FRAME_SUMMARY_H - ICON_ROW_H - TIME_ROW_H - FRAME_BOTTOM_PAD
+    chartH = math.max(CHART_MIN_H, chartH)
+
+    return {
+        frameW   = frameW,
+        frameH   = frameH,
+        chartTop = FRAME_HEADER_H + FRAME_SUMMARY_H,
+        chartW   = math.max(1, frameW - CHART_LEFT - CHART_RIGHT),
+        chartH   = chartH,
+        iconTop  = -(chartH + 7),
+    }
+end
+
+local function GetSavedTimelineSize()
+    local size = GetDB().timelineSize
+    local w = type(size) == "table" and tonumber(size.w) or nil
+    local h = type(size) == "table" and tonumber(size.h) or nil
+    local layout = GetLayout(w or FRAME_DEFAULT_W, h or FRAME_DEFAULT_H)
+    return layout.frameW, layout.frameH
+end
+
+local function SaveTimelineSize(frame)
+    if not frame or not frame.GetWidth or not frame.GetHeight then return end
+    local layout = GetLayout(frame:GetWidth(), frame:GetHeight())
+    GetDB().timelineSize = {w = layout.frameW, h = layout.frameH}
+end
+
+local function GetUnpack()
+    if type(unpack) == "function" then return unpack end
+    if type(table) == "table" and type(table.unpack) == "function" then return table.unpack end
+    return nil
+end
+
+local function GetElvUIEngine()
+    local elv = _G and _G.ElvUI
+    if type(elv) ~= "table" then return nil end
+
+    local unpackFn = GetUnpack()
+    if unpackFn then
+        local ok, engine = pcall(function() return unpackFn(elv) end)
+        if ok and type(engine) == "table" then return engine end
+    end
+
+    if type(elv[1]) == "table" then return elv[1] end
+    if type(elv.GetModule) == "function" then return elv end
+    return nil
+end
+
+local function HideDefaultFrameArt(frame)
+    if not frame or type(frame.GetRegions) ~= "function" then return end
+    local regions = {frame:GetRegions()}
+    for _, region in ipairs(regions) do
+        if region and type(region.GetTexture) == "function" and type(region.Hide) == "function" then
+            region:Hide()
+        end
+    end
+end
+
+local function ApplyElvUISkin(frame)
+    local engine = GetElvUIEngine()
+    if not engine or not frame then return false end
+
+    local skins
+    if type(engine.GetModule) == "function" then
+        local ok, mod = pcall(function() return engine:GetModule("Skins") end)
+        if ok then skins = mod end
+    end
+
+    local canSkin = type(frame.SetTemplate) == "function"
+                 or type(frame.CreateBackdrop) == "function"
+                 or (skins and type(skins.HandleFrame) == "function")
+    if not canSkin then return false end
+
+    HideDefaultFrameArt(frame)
+
+    if type(frame.SetTemplate) == "function" then
+        pcall(function() frame:SetTemplate("Transparent") end)
+    elseif type(frame.CreateBackdrop) == "function" then
+        pcall(function() frame:CreateBackdrop("Transparent") end)
+    end
+
+    if skins and type(skins.HandleFrame) == "function" then
+        pcall(function() skins:HandleFrame(frame, true) end)
+    end
+    if skins and frame.CloseButton and type(skins.HandleCloseButton) == "function" then
+        pcall(function() skins:HandleCloseButton(frame.CloseButton) end)
+    end
+
+    frame.deathlapseElvUISkinned = true
+    return true
 end
 
 local function HasBit(value, flag)
@@ -182,6 +295,7 @@ local function GroupEvents(snapshot)
                 g.lastTime    = ev.time
                 g.hasCrit     = g.hasCrit or ev.isCrit
                 g.overkill    = g.overkill + (ev.overkill or 0)
+                g.overheal    = g.overheal + (ev.overheal or 0)
                 merged        = true
                 break
             end
@@ -200,6 +314,7 @@ local function GroupEvents(snapshot)
                 count       = 1,
                 hasCrit     = ev.isCrit,
                 overkill    = ev.overkill or 0,
+                overheal    = ev.overheal or 0,
                 iconEv      = ev,
             }
         end
@@ -230,6 +345,36 @@ local function ComputeHpTrajectory(groups, maxHp)
         hpBefore[i] = math.max(0, math.min(1, hp))
     end
     return hpBefore, hpAfter
+end
+
+local function ClipGroupsToRelevantWindow(groups, maxHp)
+    if not groups or #groups == 0 then return groups, nil end
+
+    local hpBefore, hpAfter = ComputeHpTrajectory(groups, maxHp)
+    local startIdx = 1
+
+    for i = #groups, 1, -1 do
+        local g = groups[i]
+        if hpBefore[i] and hpBefore[i] >= FULL_HP_EPS then
+            startIdx = i
+            break
+        end
+        if i < #groups and ((hpAfter[i] and hpAfter[i] >= FULL_HP_EPS)
+            or (g.isHeal and (g.overheal or 0) > 0)) then
+            startIdx = i + 1
+            break
+        end
+    end
+
+    if startIdx <= 1 then
+        return groups, groups[1] and groups[1].time or nil
+    end
+
+    local clipped = {}
+    for i = startIdx, #groups do
+        clipped[#clipped + 1] = groups[i]
+    end
+    return clipped, clipped[1] and clipped[1].time or nil
 end
 
 -- ============================================================================
@@ -311,6 +456,7 @@ local function ParseCombatEvent()
         local spellName = (type(p2)=="string" and p2~="") and p2 or "Heal"
         local school    = SafeNumber(p3) or 0x02
         local amount    = SafeNumber(p4) or 0
+        local overheal  = SafeNumber(p5) or 0
         local isCrit    = (p7 == true)
 
         if amount > 0 then
@@ -319,7 +465,7 @@ local function ParseCombatEvent()
                 srcName=(type(srcName)=="string" and srcName~="") and srcName or "Unknown",
                 srcGUID=srcGUID or "", amount=amount, school=school,
                 spellId=spellId, spellName=spellName,
-                isHeal=true, isCrit=isCrit, overkill=0,
+                isHeal=true, isCrit=isCrit, overkill=0, overheal=overheal,
             })
         end
     end
@@ -418,18 +564,19 @@ end
 -- ============================================================================
 
 -- X position of a group within the chart, given column index and total columns
-function Deathlapse.GroupX(colIdx, nCols)
-    local colW = math.max(MIN_COL_W, math.floor(CHART_W / math.max(nCols, 1)))
+function Deathlapse.GroupX(colIdx, nCols, chartW)
+    local colW = Deathlapse.ColWidth(nCols, chartW)
     return CHART_LEFT + (colIdx - 1) * colW + math.floor(colW / 2)
 end
 
-function Deathlapse.ColWidth(nCols)
-    return math.max(MIN_COL_W, math.floor(CHART_W / math.max(nCols, 1)))
+function Deathlapse.ColWidth(nCols, chartW)
+    return math.max(MIN_COL_W, math.floor((chartW or CHART_W) / math.max(nCols, 1)))
 end
 
 -- Y pixel from TOP of chart canvas for a given HP fraction (0=dead, 1=full)
-function Deathlapse.HpY(frac)
-    return (1 - math.max(0, math.min(1, frac))) * CHART_H
+function Deathlapse.HpY(frac, chartH)
+    chartH = chartH or CHART_H
+    return (1 - math.max(0, math.min(1, frac))) * chartH
 end
 
 -- Kept for backward-compat with existing tests
@@ -464,16 +611,90 @@ local function MakePoolFS(parent, fontObj, count)
 end
 
 local function ResetPool(pool)
-    for _, v in ipairs(pool) do v:Hide() end
+    for _, v in ipairs(pool) do
+        if v.ClearAllPoints then v:ClearAllPoints() end
+        v:Hide()
+    end
+end
+
+local RenderTimeline
+
+local function LayoutTimelineFrame(frame)
+    frame = frame or timelineFrame
+    if not frame or not frame.chart then return end
+
+    local layout = GetLayout(frame.GetWidth and frame:GetWidth() or FRAME_DEFAULT_W,
+                             frame.GetHeight and frame:GetHeight() or FRAME_DEFAULT_H)
+    frame.layout = layout
+
+    if frame.summaryFS then
+        frame.summaryFS:ClearAllPoints()
+        frame.summaryFS:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -(FRAME_HEADER_H + 6))
+        frame.summaryFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -(FRAME_HEADER_H + 6))
+    end
+
+    if frame.attackerFS then
+        frame.attackerFS:ClearAllPoints()
+        frame.attackerFS:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -(FRAME_HEADER_H + 22))
+        frame.attackerFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -(FRAME_HEADER_H + 22))
+    end
+
+    if frame.windowFS then
+        frame.windowFS:ClearAllPoints()
+        frame.windowFS:SetPoint("TOPLEFT", frame, "TOPLEFT", 14, -(FRAME_HEADER_H + 38))
+        frame.windowFS:SetPoint("TOPRIGHT", frame, "TOPRIGHT", -14, -(FRAME_HEADER_H + 38))
+    end
+
+    local chart = frame.chart
+    chart:ClearAllPoints()
+    chart:SetSize(layout.frameW, layout.chartH)
+    chart:SetPoint("TOPLEFT", frame, "TOPLEFT", 0, -layout.chartTop)
+
+    if frame.yLabels then
+        for _, entry in ipairs(frame.yLabels) do
+            local yPos = -layout.chartTop - (1 - entry.pct / 100) * layout.chartH + 4
+            entry.fs:ClearAllPoints()
+            entry.fs:SetPoint("TOPRIGHT", frame, "TOPLEFT", CHART_LEFT - 4, yPos)
+        end
+    end
+
+    if chart.gridLines then
+        for _, entry in ipairs(chart.gridLines) do
+            local gridY = (1 - entry.pct / 100) * layout.chartH
+            entry.tex:ClearAllPoints()
+            entry.tex:SetSize(layout.chartW, 1)
+            entry.tex:SetPoint("TOPLEFT", chart, "TOPLEFT", CHART_LEFT, -gridY)
+        end
+    end
+
+    if chart.zeroLine then
+        chart.zeroLine:ClearAllPoints()
+        chart.zeroLine:SetSize(layout.chartW, 1)
+        chart.zeroLine:SetPoint("TOPLEFT", chart, "TOPLEFT", CHART_LEFT, -layout.chartH)
+    end
+
+    if frame.nowLbl then
+        frame.nowLbl:ClearAllPoints()
+        frame.nowLbl:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -8, -4)
+    end
 end
 
 local function CreateTimelineFrame()
     if timelineFrame then return end
 
+    local savedW, savedH = GetSavedTimelineSize()
     local f = CreateFrame("Frame", "DeathlapseTimelineFrame", UIParent, "BasicFrameTemplateWithInset")
-    f:SetSize(FRAME_W, FRAME_H)
+    f:SetSize(savedW, savedH)
     f:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
     f:SetMovable(true)
+    if f.SetResizable then f:SetResizable(true) end
+    if f.SetResizeBounds then
+        f:SetResizeBounds(FRAME_MIN_W, FRAME_MIN_H, FRAME_MAX_W, FRAME_MAX_H)
+    else
+        if f.SetMinResize then f:SetMinResize(FRAME_MIN_W, FRAME_MIN_H) end
+        if f.SetMaxResize then f:SetMaxResize(FRAME_MAX_W, FRAME_MAX_H) end
+    end
+    if f.SetClampedToScreen then f:SetClampedToScreen(true) end
     f:EnableMouse(true)
     f:RegisterForDrag("LeftButton")
     f:SetScript("OnDragStart", f.StartMoving)
@@ -491,6 +712,7 @@ local function CreateTimelineFrame()
     local title = f:CreateFontString(nil, "OVERLAY", "GameFontHighlight")
     title:SetPoint("TOP", f, "TOP", 0, -6)
     title:SetText("|cffcc3333Deathlapse|r — Death Recap")
+    f.title = title
 
     -- Summary line (below header)
     local summaryFS = f:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
@@ -508,45 +730,65 @@ local function CreateTimelineFrame()
     attackerFS:SetText("")
     f.attackerFS = attackerFS
 
+    local windowFS = f:CreateFontString(nil, "OVERLAY", "GameFontHighlightSmall")
+    windowFS:SetPoint("TOPLEFT", f, "TOPLEFT", 14, -(FRAME_HEADER_H + 38))
+    windowFS:SetPoint("TOPRIGHT", f, "TOPRIGHT", -14, -(FRAME_HEADER_H + 38))
+    windowFS:SetJustifyH("CENTER")
+    windowFS:SetText("")
+    f.windowFS = windowFS
+
     -- Chart canvas
-    local chartY = -(FRAME_HEADER_H + FRAME_SUMMARY_H)
+    local layout = GetLayout(savedW, savedH)
+    local chartY = -layout.chartTop
     local chart = CreateFrame("Frame", nil, f)
-    chart:SetSize(FRAME_W, CHART_H)
+    chart:SetSize(layout.frameW, layout.chartH)
     chart:SetPoint("TOPLEFT", f, "TOPLEFT", 0, chartY)
     f.chart = chart
 
     -- Chart background
     local chartBg = chart:CreateTexture(nil, "BACKGROUND")
     chartBg:SetAllPoints()
-    SetSolidColor(chartBg, 0, 0, 0, 0.5)
+    SetSolidColor(chartBg, 0.02, 0.02, 0.03, 0.56)
+    chart.chartBg = chartBg
 
     -- Y-axis labels (pre-created, static)
+    f.yLabels = {}
     for _, pct in ipairs({100, 75, 50, 25, 0}) do
         local lbl = f:CreateFontString(nil, "OVERLAY", "GameFontDisableSmall")
-        local yPos = chartY - (1 - pct/100) * CHART_H + 4
+        local yPos = chartY - (1 - pct/100) * layout.chartH + 4
         lbl:SetPoint("TOPRIGHT", f, "TOPLEFT", CHART_LEFT - 2, yPos)
         lbl:SetText(pct .. "%")
+        f.yLabels[#f.yLabels + 1] = {fs = lbl, pct = pct}
     end
 
     -- Horizontal gridlines at 25%, 50%, 75%
+    chart.gridLines = {}
     for _, pct in ipairs({25, 50, 75}) do
-        local gridY = (1 - pct/100) * CHART_H
-        local gl = chart:CreateTexture(nil, "BACKGROUND")
-        gl:SetSize(CHART_W, 1)
+        local gridY = (1 - pct/100) * layout.chartH
+        local gl = chart:CreateTexture(nil, "BORDER")
+        gl:SetSize(layout.chartW, 1)
         gl:SetPoint("TOPLEFT", chart, "TOPLEFT", CHART_LEFT, -gridY)
-        SetSolidColor(gl, 0.4, 0.4, 0.4, 0.3)
+        SetSolidColor(gl, 0.45, 0.45, 0.55, 0.22)
+        chart.gridLines[#chart.gridLines + 1] = {tex = gl, pct = pct}
     end
+
+    local zeroLine = chart:CreateTexture(nil, "BORDER")
+    zeroLine:SetSize(layout.chartW, 1)
+    zeroLine:SetPoint("TOPLEFT", chart, "TOPLEFT", CHART_LEFT, -layout.chartH)
+    SetSolidColor(zeroLine, 0.65, 0.65, 0.72, 0.32)
+    chart.zeroLine = zeroLine
 
     -- "NOW" label
     local nowLbl = chart:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
     nowLbl:SetPoint("TOPRIGHT", chart, "TOPRIGHT", -2, -4)
     nowLbl:SetText("|cffff2222NOW|r")
+    f.nowLbl = nowLbl
 
     -- Texture pools on chart
     chart.bluePool  = MakePoolTextures(chart, "ARTWORK",  MAX_GROUPS + 4)
     chart.capPool   = MakePoolTextures(chart, "ARTWORK",  MAX_GROUPS + 4)
     chart.linePool  = MakePoolTextures(chart, "OVERLAY",  MAX_GROUPS + 4)
-    chart.borderPool= MakePoolTextures(chart, "ARTWORK",  MAX_GROUPS + 4)
+    chart.borderPool= MakePoolTextures(chart, "BACKGROUND", MAX_GROUPS + 4)
     chart.iconPool  = MakePoolTextures(chart, "OVERLAY",  MAX_GROUPS + 4)
     chart.countFS   = MakePoolFS(chart, "GameFontNormalSmall", MAX_GROUPS + 4)
     chart.timeFS    = MakePoolFS(chart, "GameFontDisableSmall", MAX_GROUPS + 4)
@@ -567,7 +809,8 @@ local function CreateTimelineFrame()
         local relX    = screenX / sc - (self:GetLeft() or 0)
 
         local nCols = #deathGroups
-        local colW  = Deathlapse.ColWidth(nCols)
+        local layout = timelineFrame and timelineFrame.layout or GetLayout()
+        local colW  = Deathlapse.ColWidth(nCols, layout.chartW)
         local colIdx = math.floor((relX - CHART_LEFT) / colW) + 1
         colIdx = math.max(1, math.min(nCols, colIdx))
 
@@ -591,7 +834,10 @@ local function CreateTimelineFrame()
         if (not g.isHeal) and g.overkill > 0 then
             amtStr = amtStr .. string.format(" |cffff2222[+%d overkill]|r", g.overkill)
         end
-        if g.count > 1 then amtStr = amtStr .. string.format("  |cffaaaaaa×%d hits|r", g.count) end
+        if g.isHeal and (g.overheal or 0) > 0 then
+            amtStr = amtStr .. string.format(" |cff99ffbb(+%d overheal)|r", g.overheal)
+        end
+        if g.count > 1 then amtStr = amtStr .. string.format("  |cffaaaaaax%d hits|r", g.count) end
         GameTooltip:AddLine(amtStr, 1, 1, 1)
         local tOff = g.time - deathTime
         GameTooltip:AddLine(string.format("%.1fs before death", math.abs(tOff)), 0.55, 0.55, 0.55)
@@ -600,13 +846,37 @@ local function CreateTimelineFrame()
     hover:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
     timelineFrame = f
+    local grip = CreateFrame("Button", nil, f)
+    grip:SetSize(18, 18)
+    grip:SetPoint("BOTTOMRIGHT", f, "BOTTOMRIGHT", -5, 5)
+    if grip.SetNormalTexture then grip:SetNormalTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Up") end
+    if grip.SetHighlightTexture then grip:SetHighlightTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Highlight") end
+    if grip.SetPushedTexture then grip:SetPushedTexture("Interface\\ChatFrame\\UI-ChatIM-SizeGrabber-Down") end
+    grip:SetScript("OnMouseDown", function()
+        if f.StartSizing then f:StartSizing("BOTTOMRIGHT") end
+    end)
+    grip:SetScript("OnMouseUp", function()
+        if f.StopMovingOrSizing then f:StopMovingOrSizing() end
+        SaveTimelineSize(f)
+        LayoutTimelineFrame(f)
+        RenderTimeline()
+    end)
+    f.resizeGrip = grip
+
+    f:SetScript("OnSizeChanged", function(self)
+        LayoutTimelineFrame(self)
+        if self:IsShown() then RenderTimeline() end
+    end)
+
+    LayoutTimelineFrame(f)
+    ApplyElvUISkin(f)
 end
 
 -- ============================================================================
 -- Rendering
 -- ============================================================================
 
-local function RenderTimeline()
+RenderTimeline = function()
     if not timelineFrame then return end
     local chart = timelineFrame.chart
 
@@ -622,6 +892,7 @@ local function RenderTimeline()
     if not deathGroups or #deathGroups == 0 then
         timelineFrame.summaryFS:SetText("|cff888888No death record yet.  /dl test to preview.|r")
         timelineFrame.attackerFS:SetText("")
+        if timelineFrame.windowFS then timelineFrame.windowFS:SetText("") end
         return
     end
 
@@ -634,31 +905,44 @@ local function RenderTimeline()
 
     local summary = ""
     if killerName then
-        summary = "Killed by: |cffff4444" .. killerName .. "|r"
+        summary = "Killed by: |cffff6666" .. killerName .. "|r"
         if killerSpell then summary = summary .. " — " .. killerSpell end
         summary = summary .. "  "
     end
-    summary = summary .. string.format("|cffff6666%d hits  %d dmg|r", dmgCount, dmgTotal)
+    summary = summary .. string.format("|cffff7777%d hits  %d dmg|r", dmgCount, dmgTotal)
     if healCount > 0 then
-        summary = summary .. string.format("  |cff44ff88%d heals  %d healed|r", healCount, healTotal)
+        summary = summary .. string.format("  |cff66e69a%d heals  %d healed|r", healCount, healTotal)
     end
     timelineFrame.summaryFS:SetText(summary)
+
+    local windowDuration = TIMELINE_DURATION
+    if deathWindowStart and deathTime then
+        windowDuration = math.max(0, math.min(TIMELINE_DURATION, deathTime - deathWindowStart))
+    elseif deathGroups[1] and deathTime then
+        windowDuration = math.max(0, math.min(TIMELINE_DURATION, deathTime - deathGroups[1].time))
+    end
+    if timelineFrame.windowFS then
+        timelineFrame.windowFS:SetText(string.format("|cffb8c7ffYou took %d damage in %.1f seconds|r", dmgTotal, windowDuration))
+    end
 
     -- Top attackers strip
     local attackers, _ = TopAttackers(deathGroups, 3)
     local atkStr = ""
     for i, a in ipairs(attackers) do
         if i > 1 then atkStr = atkStr .. "  |cff555555|  |r" end
-        atkStr = atkStr .. string.format("|cffdddddd%s|r |cffff6666%d%%|r", a.name, a.pct)
+        atkStr = atkStr .. string.format("|cffdddddd%s|r |cffff8888%d%%|r", a.name, a.pct)
     end
     timelineFrame.attackerFS:SetText(atkStr)
 
     -- Compute HP trajectory
     local hpBefore, hpAfter = ComputeHpTrajectory(deathGroups, playerMaxHp)
+    local layout = timelineFrame.layout or GetLayout()
 
     local nCols = #deathGroups
-    local colW  = Deathlapse.ColWidth(nCols)
-    local barW  = math.max(8, colW - 4)
+    local colW  = Deathlapse.ColWidth(nCols, layout.chartW)
+    local barW  = math.max(7, colW - (colW >= 24 and 6 or 4))
+    local iconSize = ClampValue(colW - 4, ICON_MIN_SIZE, ICON_MAX_SIZE)
+    local timeEvery = (colW >= 34) and 1 or math.max(2, math.ceil(34 / math.max(colW, 1)))
 
     for i, g in ipairs(deathGroups) do
         local cx   = CHART_LEFT + (i - 1) * colW + math.floor(colW / 2)
@@ -667,9 +951,9 @@ local function RenderTimeline()
         local hpB  = hpBefore[i]   -- HP fraction before event
         local hpA  = hpAfter[i]    -- HP fraction after event
 
-        local yB   = Deathlapse.HpY(hpB)   -- pixel from top for hpBefore
-        local yA   = Deathlapse.HpY(hpA)   -- pixel from top for hpAfter
-        local yBot = CHART_H                 -- bottom of chart (0% HP)
+        local yB   = Deathlapse.HpY(hpB, layout.chartH) -- pixel from top for hpBefore
+        local yA   = Deathlapse.HpY(hpA, layout.chartH) -- pixel from top for hpAfter
+        local yBot = layout.chartH                       -- bottom of chart (0% HP)
 
         -- Blue bar: from hpAfter level down to 0%
         local blueH = math.max(1, yBot - yA)
@@ -677,7 +961,7 @@ local function RenderTimeline()
         if blueTex then
             blueTex:SetSize(barW, blueH)
             blueTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx, -yA)
-            SetSolidColor(blueTex, COLOR_HP_BLUE[1], COLOR_HP_BLUE[2], COLOR_HP_BLUE[3], 0.88)
+            SetSolidColor(blueTex, COLOR_HP_BLUE[1], COLOR_HP_BLUE[2], COLOR_HP_BLUE[3], 0.78)
             blueTex:Show()
         end
 
@@ -690,10 +974,10 @@ local function RenderTimeline()
                 capTex:SetSize(barW, math.max(1, capH))
                 capTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx, -capTop)
                 if g.isHeal then
-                    SetSolidColor(capTex, COLOR_HEAL_GRN[1], COLOR_HEAL_GRN[2], COLOR_HEAL_GRN[3], 0.90)
+                    SetSolidColor(capTex, COLOR_HEAL_GRN[1], COLOR_HEAL_GRN[2], COLOR_HEAL_GRN[3], 0.78)
                 else
-                    local col = (g.overkill > 0) and {0.95, 0.05, 0.05} or COLOR_DMG_RED
-                    SetSolidColor(capTex, col[1], col[2], col[3], g.hasCrit and 1.0 or 0.88)
+                    local col = (g.overkill > 0) and {0.90, 0.06, 0.07} or COLOR_DMG_RED
+                    SetSolidColor(capTex, col[1], col[2], col[3], g.hasCrit and 0.92 or 0.78)
                 end
                 capTex:Show()
             end
@@ -704,47 +988,53 @@ local function RenderTimeline()
         if lineTex and yA < yBot then
             lineTex:SetSize(barW, 1)
             lineTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx, -yA)
-            SetSolidColor(lineTex, COLOR_HP_LINE[1], COLOR_HP_LINE[2], COLOR_HP_LINE[3], 0.80)
+            SetSolidColor(lineTex, COLOR_HP_LINE[1], COLOR_HP_LINE[2], COLOR_HP_LINE[3], 0.70)
             lineTex:Show()
         end
 
-        -- Bar border (thin left/right edges for readability)
+        -- Subtle column track behind the bar.
         local borderTex = chart.borderPool[i]
         if borderTex then
-            borderTex:SetSize(barW + 2, math.max(1, yBot - yB))
-            borderTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx - 1, -yB)
-            SetSolidColor(borderTex, 0, 0, 0, 0.40)
+            borderTex:SetSize(barW + 2, yBot)
+            borderTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx - 1, 0)
+            SetSolidColor(borderTex, 0, 0, 0, 0.18)
             borderTex:Show()
         end
 
         -- Icon below the bar
-        local iconRowY = -(CHART_H + 3)
+        local iconRowY = layout.iconTop
+        local iconX = cx - math.floor(iconSize / 2)
         local iconTex = chart.iconPool[i]
         if iconTex then
             local iconPath = GetEventIcon(g.iconEv or {spellId=g.spellId, subevent=g.subevent})
             iconTex:SetTexture(iconPath)
             iconTex:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-            iconTex:SetSize(ICON_SIZE, ICON_SIZE)
-            iconTex:SetPoint("TOP", chart, "TOPLEFT", cx, iconRowY)
+            iconTex:SetSize(iconSize, iconSize)
+            iconTex:SetPoint("TOPLEFT", chart, "TOPLEFT", iconX, iconRowY)
             iconTex:Show()
         end
 
-        -- Hit count label (xN)
+        -- Hit count label is tucked into the icon instead of taking its own row.
         if g.count > 1 then
             local cfs = chart.countFS[i]
             if cfs then
-                cfs:SetText("|cffffcc00×" .. g.count .. "|r")
-                cfs:SetPoint("BOTTOM", chart, "TOPLEFT", cx, iconRowY - ICON_SIZE - 1)
+                if cfs.SetWidth then cfs:SetWidth(iconSize + 8) end
+                cfs:SetJustifyH("RIGHT")
+                cfs:SetText("|cffffcc00x" .. g.count .. "|r")
+                cfs:SetPoint("BOTTOMRIGHT", chart, "TOPLEFT", iconX + iconSize + 4, iconRowY - iconSize + 1)
                 cfs:Show()
             end
         end
 
         -- Time label
         local tfs = chart.timeFS[i]
-        if tfs then
+        if tfs and (timeEvery == 1 or i == 1 or i == nCols
+            or ((i - 1) % timeEvery == 0 and i <= nCols - timeEvery)) then
             local tOff = math.abs(g.time - deathTime)
+            if tfs.SetWidth then tfs:SetWidth(math.max(30, colW * timeEvery)) end
+            tfs:SetJustifyH("CENTER")
             tfs:SetText(string.format("%.1fs", tOff))
-            tfs:SetPoint("TOP", chart, "TOPLEFT", cx, iconRowY - ICON_SIZE - 12)
+            tfs:SetPoint("TOP", chart, "TOPLEFT", cx, iconRowY - iconSize - 5)
             tfs:Show()
         end
     end
@@ -774,6 +1064,7 @@ function Deathlapse:ClearSnapshot()
     deathSnapshot = nil
     deathGroups   = nil
     deathTime     = nil
+    deathWindowStart = nil
     killerName    = nil
     killerSpell   = nil
     self:HideTimeline()
@@ -801,11 +1092,16 @@ local function FindKiller(snap)
     return nil, nil
 end
 
+local function SetDeathGroupsFromSnapshot(snapshot)
+    local grouped = GroupEvents(snapshot)
+    deathGroups, deathWindowStart = ClipGroupsToRelevantWindow(grouped, playerMaxHp)
+end
+
 local function OnPlayerDied()
     deathTime     = GetTime()
     playerMaxHp   = (UnitHealthMax and UnitHealthMax("player")) or playerMaxHp
     deathSnapshot = SnapshotForDeath(deathTime)
-    deathGroups   = GroupEvents(deathSnapshot)
+    SetDeathGroupsFromSnapshot(deathSnapshot)
     killerName, killerSpell = FindKiller(deathSnapshot)
     Deathlapse:UpdateMinimapIndicator()
     if GetMinimapSettings().showOnDeath ~= false then
@@ -826,72 +1122,46 @@ local function GenerateTestSnapshot()
     deathTime     = now
     playerMaxHp   = 8500
 
-    local snap    = {}
-    local srcNames = {"Onyxia", "Onyxia's Whelp", "Guard Mol'dar", "Arcanist Doan"}
-    local spells   = {
-        {name="Wing Buffet",  id=18500, school=0x01, subevent="SPELL_DAMAGE"},
-        {name="Flame Breath", id=18435, school=0x04, subevent="SPELL_DAMAGE"},
-        {name="Deep Breath",  id=23461, school=0x04, subevent="SPELL_DAMAGE"},
-        {name="Shadowbolt",   id=9613,  school=0x20, subevent="SPELL_DAMAGE"},
-        {name="Fireball",     id=9488,  school=0x04, subevent="SPELL_DAMAGE"},
-        {name="Melee",        id=nil,   school=0x01, subevent="SWING_DAMAGE"},
-    }
-    local heals = {
-        {name="Flash Heal",   id=9474,  school=0x02},
-        {name="Renew",        id=9076,  school=0x02},
-    }
-
-    -- Spread events across 20 seconds, last event is the killing blow
     local events = {}
-    -- 8 damage events with varying times
-    for i = 1, 10 do
-        local t = now - TIMELINE_DURATION + (i / 11) * TIMELINE_DURATION
-        local sp = spells[math.random(#spells)]
+
+    local function damage(tOff, src, spell, spellId, school, amount, crit, overkill, subevent)
         events[#events + 1] = {
-            time=t, subevent=sp.subevent,
-            srcName=srcNames[math.random(#srcNames)],
-            srcGUID="",
-            amount=math.random(600, 3200),
-            school=sp.school, spellId=sp.id, spellName=sp.name,
-            isHeal=false, isCrit=(math.random(4)==1), overkill=0,
+            time=now - tOff, subevent=subevent or "SPELL_DAMAGE",
+            srcName=src, srcGUID="", amount=amount, school=school,
+            spellId=spellId, spellName=spell,
+            isHeal=false, isCrit=crit, overkill=overkill or 0,
         }
     end
-    -- 3 dot groups (multiple ticks)
-    for i = 1, 3 do
-        local baseT = now - 15 + i*4
-        for tick = 1, math.random(3, 5) do
-            events[#events + 1] = {
-                time=baseT + tick*0.5 - 0.5, subevent="SPELL_PERIODIC_DAMAGE",
-                srcName="Onyxia", srcGUID="",
-                amount=math.random(250, 600),
-                school=0x04, spellId=18435, spellName="Flame Breath (DoT)",
-                isHeal=false, isCrit=false, overkill=0,
-            }
-        end
-    end
-    -- 4 heal events
-    for i = 1, 4 do
-        local t = now - 18 + i*4
-        local hl = heals[math.random(#heals)]
+
+    local function heal(tOff, src, spell, spellId, amount, crit, overheal)
         events[#events + 1] = {
-            time=t, subevent="SPELL_HEAL",
-            srcName="Priest", srcGUID="",
-            amount=math.random(800, 2400),
-            school=0x02, spellId=hl.id, spellName=hl.name,
-            isHeal=true, isCrit=(math.random(5)==1), overkill=0,
+            time=now - tOff, subevent="SPELL_HEAL",
+            srcName=src, srcGUID="", amount=amount, school=0x02,
+            spellId=spellId, spellName=spell,
+            isHeal=true, isCrit=crit, overkill=0, overheal=overheal or 0,
         }
     end
-    -- killing blow
-    events[#events + 1] = {
-        time=now-0.2, subevent="SPELL_DAMAGE",
-        srcName="Onyxia", srcGUID="",
-        amount=5800, school=0x04, spellId=23461, spellName="Deep Breath",
-        isHeal=false, isCrit=true, overkill=1200,
-    }
+
+    -- Older combat is deliberately present, then a top-off heal clips it away.
+    damage(18.2, "Guard Mol'dar", "Wing Buffet", 18500, 0x01, 845, true)
+    damage(16.4, "Onyxia's Whelp", "Melee", nil, 0x01, 420, false, 0, "SWING_DAMAGE")
+    heal(14.5, "Priest", "Renew", 9076, 1100, false)
+    damage(12.8, "Arcanist Doan", "Fireball", 9488, 0x04, 760, false)
+    heal(6.4, "Priest", "Flash Heal", 9474, 2300, true, 900)
+
+    -- The recap should start here: full health to dead in roughly HotS-sized time.
+    damage(5.8, "Onyxia", "Flame Breath", 18435, 0x04, 1200, false)
+    damage(4.6, "Guard Mol'dar", "Wing Buffet", 18500, 0x01, 1450, true)
+    damage(3.9, "Onyxia's Whelp", "Melee", nil, 0x01, 1100, false, 0, "SWING_DAMAGE")
+    heal(3.2, "Priest", "Flash Heal", 9474, 600, false)
+    damage(2.5, "Onyxia", "Flame Breath", 18435, 0x04, 1800, false)
+    damage(1.7, "Onyxia", "Flame Breath (DoT)", 18435, 0x04, 850, false, 0, "SPELL_PERIODIC_DAMAGE")
+    damage(1.2, "Onyxia", "Flame Breath (DoT)", 18435, 0x04, 850, false, 0, "SPELL_PERIODIC_DAMAGE")
+    damage(0.2, "Onyxia", "Deep Breath", 23461, 0x04, 2400, true, 550)
 
     table.sort(events, function(a,b) return a.time < b.time end)
     deathSnapshot = events
-    deathGroups   = GroupEvents(events)
+    SetDeathGroupsFromSnapshot(events)
     killerName, killerSpell = FindKiller(events)
 end
 
@@ -924,13 +1194,24 @@ SlashCmdList["DEATHLAPSE"] = function(msg)
         local s = GetMinimapSettings()
         s.showOnDeath = not (s.showOnDeath ~= false)
         Print("Auto-show on death: " .. (s.showOnDeath ~= false and "enabled" or "disabled"))
+    elseif cmd == "reset" then
+        GetDB().timelinePosition = nil
+        GetDB().timelineSize = nil
+        if timelineFrame then
+            timelineFrame:ClearAllPoints()
+            timelineFrame:SetSize(FRAME_DEFAULT_W, FRAME_DEFAULT_H)
+            timelineFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+            LayoutTimelineFrame(timelineFrame)
+            RenderTimeline()
+        end
+        Print("Timeline position and size reset.")
     elseif cmd == "test" then
         GenerateTestSnapshot()
         Deathlapse:UpdateMinimapIndicator()
         Deathlapse:ShowTimeline()
         Print("Showing test data.")
     elseif cmd == "help" or cmd == "?" then
-        Print("Commands: show | hide | clear | minimap | autoshow | test | help")
+        Print("Commands: show | hide | clear | minimap | autoshow | reset | test | help")
     else Deathlapse:ToggleTimeline() end
 end
 
@@ -948,13 +1229,17 @@ eventFrame:RegisterEvent("UNIT_MAXHEALTH")
 eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
 
 eventFrame:SetScript("OnEvent", function(_, event, arg1)
-    if event == "ADDON_LOADED" and arg1 == addonName then
-        playerGUID  = UnitGUID and UnitGUID("player") or nil
-        playerMaxHp = (UnitHealthMax and UnitHealthMax("player")) or 1
-        if GetMinimapSettings().show then
-            CreateMinimapButton(); UpdateMinimapButtonPosition()
+    if event == "ADDON_LOADED" then
+        if arg1 == addonName then
+            playerGUID  = UnitGUID and UnitGUID("player") or nil
+            playerMaxHp = (UnitHealthMax and UnitHealthMax("player")) or 1
+            if GetMinimapSettings().show then
+                CreateMinimapButton(); UpdateMinimapButtonPosition()
+            end
+            Print("Loaded. Die to see your recap, or /dl test to preview.")
+        elseif arg1 == "ElvUI" and timelineFrame and not timelineFrame.deathlapseElvUISkinned then
+            ApplyElvUISkin(timelineFrame)
         end
-        Print("Loaded. Die to see your recap, or /dl test to preview.")
 
     elseif event == "PLAYER_ENTERING_WORLD" then
         playerGUID  = UnitGUID and UnitGUID("player") or nil
@@ -985,6 +1270,8 @@ Deathlapse._internal = {
     FindKiller           = FindKiller,
     GroupEvents          = GroupEvents,
     ComputeHpTrajectory  = ComputeHpTrajectory,
+    ClipGroupsToRelevantWindow = ClipGroupsToRelevantWindow,
+    GetLayout            = GetLayout,
     GetEventBuffer       = function() return eventBuffer end,
     SetEventBuffer       = function(t) eventBuffer = t end,
     SetDeathTime         = function(t) deathTime = t end,
