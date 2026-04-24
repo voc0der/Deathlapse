@@ -1,5 +1,21 @@
 ## [Unreleased]
 
+## [1.1.0] - 2026-04-23
+
+### Changed
+- Complete visual redesign modelled on the Heroes of the Storm death recap
+- Timeline replaced by a waterfall HP bar chart: each column is one hit-group; the blue bar shows remaining HP, the red cap shows damage taken, green cap for heals
+- Same-spell hits from the same source within 1 second are merged into a single column showing a ×N count, reducing DoT tick noise
+- Spell icons (from `GetSpellInfo`) shown below each column; melee falls back to the ability icon, environmental to the drowning icon
+- Time-before-death label beneath each icon
+- Top attackers summary strip shows attacker names with their share of total damage
+- HP trajectory reconstructed backwards from death using event amounts and overkill values — no separate UNIT_HEALTH tracking required
+- White separator line at the hpAfter level clearly marks the transition between remaining HP and damage taken
+- Overkill columns rendered in brighter red with the killing-blow column sized to the effective (non-overkill) damage
+- Frame widened to 560 px; chart area 130 px tall with 25/50/75% gridlines and a Y-axis percentage strip
+- `GroupX`, `ColWidth`, `HpY`, `ComputeHpTrajectory`, `GroupEvents` exported for test coverage (54 tests passing)
+- `/dl test` generates a realistic multi-source scenario including DoT groups, heals, and an overkill kill shot
+
 ## [1.0.0] - 2026-04-22
 
 ### Added
