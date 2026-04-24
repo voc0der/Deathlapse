@@ -12,6 +12,10 @@ The entire addon lives on the minimap. A small skull button orbits it; click it 
 
 Current version: `1.1.2`
 
+<p align="center">
+  <img src="assets/recap-screenshot.png" alt="Deathlapse death recap" width="600" />
+</p>
+
 ## What the Timeline Shows
 
 - **Blue columns** — reconstructed HP remaining after each event.
