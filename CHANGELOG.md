@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [1.1.4] - 2026-04-25
+
+### Changed
+- Release-only package refresh
+
 ## [1.1.3] - 2026-04-25
 
 ### Added
