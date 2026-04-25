@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [1.1.3] - 2026-04-25
+
+### Added
+- `/dl about` command showing that Deathlapse was made by voc0der and linking to the GitHub repository
+
 ## [1.1.1] - 2026-04-24
 
 ### Added

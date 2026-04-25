@@ -5,6 +5,8 @@
 -- green cap for heals. Spell icons and compact time labels sit below each column.
 
 local addonName = "Deathlapse"
+local addonAuthor = "voc0der"
+local addonWebsite = "https://github.com/voc0der/Deathlapse"
 Deathlapse = {}
 
 -- ============================================================================
@@ -1169,6 +1171,11 @@ end
 -- Slash Commands
 -- ============================================================================
 
+local function PrintAbout()
+    Print(addonName .. " by " .. addonAuthor)
+    Print(addonWebsite)
+end
+
 SLASH_DEATHLAPSE1 = "/deathlapse"
 SLASH_DEATHLAPSE2 = "/dl"
 SlashCmdList["DEATHLAPSE"] = function(msg)
@@ -1179,6 +1186,7 @@ SlashCmdList["DEATHLAPSE"] = function(msg)
     if cmd == "" or cmd == "show" then Deathlapse:ShowTimeline()
     elseif cmd == "hide"     then Deathlapse:HideTimeline()
     elseif cmd == "clear"    then Deathlapse:ClearSnapshot()
+    elseif cmd == "about"    then PrintAbout()
     elseif cmd == "minimap" or cmd == "mm" then
         local s = GetMinimapSettings()
         s.show = not s.show
@@ -1211,7 +1219,7 @@ SlashCmdList["DEATHLAPSE"] = function(msg)
         Deathlapse:ShowTimeline()
         Print("Showing test data.")
     elseif cmd == "help" or cmd == "?" then
-        Print("Commands: show | hide | clear | minimap | autoshow | reset | test | help")
+        Print("Commands: show | hide | clear | about | minimap | autoshow | reset | test | help")
     else Deathlapse:ToggleTimeline() end
 end
 

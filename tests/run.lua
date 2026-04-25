@@ -40,7 +40,10 @@ local function stub_frame()
 end
 
 function CreateFrame() return stub_frame() end
-DEFAULT_CHAT_FRAME = {AddMessage=function()end}
+local chatMessages = {}
+DEFAULT_CHAT_FRAME = {
+    AddMessage = function(_, msg) chatMessages[#chatMessages + 1] = msg end,
+}
 DeathlapseDB = {}
 SlashCmdList = {}
 SLASH_DEATHLAPSE1 = nil
@@ -66,6 +69,14 @@ bit = {
 
 dofile("Deathlapse.lua")
 local I = Deathlapse._internal
+
+-- ============================================================================
+-- Slash Commands
+-- ============================================================================
+print("\n-- Slash Commands --")
+SlashCmdList["DEATHLAPSE"]("about")
+ok(chatMessages[1] and string.find(chatMessages[1], "voc0der", 1, true), "about prints author")
+ok(chatMessages[2] and string.find(chatMessages[2], "https://github.com/voc0der/Deathlapse", 1, true), "about prints GitHub URL")
 
 -- ============================================================================
 -- SafeNumber
