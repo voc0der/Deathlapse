@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [1.1.5] - 2026-04-27
+
+### Added
+- Share button on the recap frame — sends your death data to the group via addon messages and posts `[Deathlapse Death Recap]` in chat; recipients with Deathlapse see a local clickable link to load the replay
+
 ## [1.1.4] - 2026-04-25
 
 ### Changed

@@ -18,6 +18,11 @@ local FULL_HP_EPS        = 0.995
 local BUFFER_CAPACITY    = 500
 local BUFFER_PRUNE_AGE   = 25
 
+local ADDON_PREFIX    = "DLAPSE"
+local LINK_CHUNK_SIZE = 200
+local LINK_FSEP       = "\031"
+local LINK_GSEP       = "\030"
+
 local GROUP_MERGE_WINDOW = 1.0   -- same spell+source within this many seconds → one column
 local MAX_GROUPS         = 28    -- cap columns; oldest groups are dropped when exceeded
 
@@ -81,9 +86,11 @@ local deathSnapshot = nil   -- raw events
 local deathGroups   = nil   -- grouped columns
 local deathTime     = nil
 local deathWindowStart = nil
-local killerName    = nil
-local killerSpell   = nil
-local minimapButton = nil
+local killerName     = nil
+local killerSpell    = nil
+local receivedChunks = {}
+local receivedData   = {}
+local minimapButton  = nil
 local timelineFrame = nil
 
 -- ============================================================================
@@ -400,6 +407,140 @@ local function TopAttackers(groups, limit)
         entry.pct = totalDmg > 0 and math.floor(entry.amt / totalDmg * 100 + 0.5) or 0
     end
     return sorted, totalDmg
+end
+
+-- ============================================================================
+-- Link Sharing
+-- ============================================================================
+
+local function SerializeRecap()
+    if not deathGroups or #deathGroups == 0 then return nil end
+    local dt = deathTime or GetTime()
+    local rows = {
+        table.concat({tostring(playerMaxHp), killerName or "", killerSpell or ""}, LINK_FSEP)
+    }
+    for _, g in ipairs(deathGroups) do
+        rows[#rows+1] = table.concat({
+            string.format("%.1f", g.time - dt),
+            g.srcName,
+            g.spellName,
+            tostring(g.spellId or ""),
+            tostring(g.school or 1),
+            g.isHeal and "1" or "0",
+            tostring(g.totalAmount),
+            tostring(g.count),
+            g.hasCrit and "1" or "0",
+            tostring(g.overkill or 0),
+            tostring(g.overheal or 0),
+        }, LINK_FSEP)
+    end
+    return table.concat(rows, LINK_GSEP)
+end
+
+local function SplitRow(row)
+    local fields, pos = {}, 1
+    while pos <= #row do
+        local n = row:find(LINK_FSEP, pos, true)
+        if n then fields[#fields+1] = row:sub(pos, n-1); pos = n + 1
+        else   fields[#fields+1] = row:sub(pos); break end
+    end
+    return fields
+end
+
+local function DeserializeRecap(data)
+    local rows, pos = {}, 1
+    while pos <= #data do
+        local n = data:find(LINK_GSEP, pos, true)
+        if n then rows[#rows+1] = data:sub(pos, n-1); pos = n + 1
+        else   rows[#rows+1] = data:sub(pos); break end
+    end
+    if #rows < 1 then return nil end
+
+    local hdr    = SplitRow(rows[1])
+    local maxHp  = tonumber(hdr[1]) or 1
+    local kName  = (hdr[2] and hdr[2] ~= "") and hdr[2] or nil
+    local kSpell = (hdr[3] and hdr[3] ~= "") and hdr[3] or nil
+
+    local now, groups = GetTime(), {}
+    for i = 2, #rows do
+        local f = SplitRow(rows[i])
+        if #f >= 11 then
+            local tOff   = tonumber(f[1]) or 0
+            local spId   = tonumber(f[4])
+            local isHeal = f[6] == "1"
+            local sub    = spId and (isHeal and "SPELL_HEAL" or "SPELL_DAMAGE") or "SWING_DAMAGE"
+            groups[#groups+1] = {
+                time        = now + tOff,
+                lastTime    = now + tOff,
+                srcName     = f[2],
+                spellName   = f[3],
+                spellId     = spId,
+                school      = tonumber(f[5]) or 1,
+                isHeal      = isHeal,
+                totalAmount = tonumber(f[7]) or 0,
+                count       = tonumber(f[8]) or 1,
+                hasCrit     = f[9] == "1",
+                overkill    = tonumber(f[10]) or 0,
+                overheal    = tonumber(f[11]) or 0,
+                iconEv      = {spellId=spId, subevent=sub},
+            }
+        end
+    end
+    return groups, maxHp, kName, kSpell
+end
+
+local function HandleAddonMessage(prefix, msg, sender)
+    if prefix ~= ADDON_PREFIX then return end
+    local seq, total, chunk = msg:match("^(%d+)/(%d+)/(.*)$")
+    seq   = tonumber(seq)
+    total = tonumber(total)
+    if not seq or not total or not chunk then return end
+
+    local key = sender:match("^([^%-]+)") or sender
+    local rc  = receivedChunks[key]
+    if not rc or rc.total ~= total then
+        receivedChunks[key] = {total=total, chunks={}}
+        rc = receivedChunks[key]
+    end
+    rc.chunks[seq] = chunk
+
+    local have = 0
+    for _ in pairs(rc.chunks) do have = have + 1 end
+    if have < total then return end
+
+    local parts = {}
+    for s = 1, total do parts[s] = rc.chunks[s] or "" end
+    receivedData[key]   = table.concat(parts)
+    receivedChunks[key] = nil
+    Print("|cffffcc00" .. key .. "|r shared a death recap — "
+        .. "|Hdeathlapse:" .. key .. "|h|cff88ccff[Click to view]|r|h")
+end
+
+function Deathlapse:ShareRecap()
+    if not deathGroups or #deathGroups == 0 then
+        Print("No death recap to share.")
+        return
+    end
+    local data = SerializeRecap()
+    if not data then return end
+
+    local chunks, i = {}, 1
+    while i <= #data do
+        chunks[#chunks+1] = data:sub(i, i + LINK_CHUNK_SIZE - 1)
+        i = i + LINK_CHUNK_SIZE
+    end
+
+    local channel = (IsInRaid and IsInRaid()) and "RAID"
+                 or (IsInGroup and IsInGroup()) and "PARTY"
+                 or "SAY"
+    for seq, chunk in ipairs(chunks) do
+        pcall(SendAddonMessage, ADDON_PREFIX, seq .. "/" .. #chunks .. "/" .. chunk, channel)
+    end
+
+    local pName = (UnitName and UnitName("player")) or "Unknown"
+    pcall(SendChatMessage, "[Deathlapse Death Recap] by " .. pName, channel)
+    Print("Recap shared in " .. channel
+        .. " (" .. #chunks .. " packet" .. (#chunks > 1 and "s" or "") .. ").")
 end
 
 -- ============================================================================
@@ -847,6 +988,37 @@ local function CreateTimelineFrame()
     end)
     hover:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
+    -- Link / share button (bottom-left corner)
+    local linkBtn = CreateFrame("Button", nil, f, "BackdropTemplate")
+    linkBtn:SetSize(42, 16)
+    linkBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 7)
+    linkBtn:SetFrameLevel(f:GetFrameLevel() + 5)
+    linkBtn:SetBackdrop({
+        bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
+        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
+        edgeSize = 8,
+        insets   = {left=2, right=2, top=2, bottom=2},
+    })
+    linkBtn:SetBackdropColor(0.08, 0.13, 0.30, 0.88)
+    linkBtn:SetBackdropBorderColor(0.28, 0.48, 0.82, 0.72)
+    local linkLabel = linkBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
+    linkLabel:SetAllPoints()
+    linkLabel:SetText("|cff6fa8dc[Link]|r")
+    linkBtn:SetScript("OnEnter", function(self)
+        if self.SetBackdropBorderColor then self:SetBackdropBorderColor(0.55, 0.78, 1.0, 1.0) end
+        GameTooltip:SetOwner(self, "ANCHOR_TOP")
+        GameTooltip:SetText("|cff88ccffShare Recap|r")
+        GameTooltip:AddLine("Broadcasts your death recap to the group.", 1, 1, 1)
+        GameTooltip:AddLine("Others with Deathlapse can click to view.", 0.65, 0.65, 0.65)
+        GameTooltip:Show()
+    end)
+    linkBtn:SetScript("OnLeave", function(self)
+        if self.SetBackdropBorderColor then self:SetBackdropBorderColor(0.28, 0.48, 0.82, 0.72) end
+        GameTooltip:Hide()
+    end)
+    linkBtn:SetScript("OnClick", function() Deathlapse:ShareRecap() end)
+    f.linkBtn = linkBtn
+
     timelineFrame = f
     local grip = CreateFrame("Button", nil, f)
     grip:SetSize(18, 18)
@@ -1224,6 +1396,39 @@ SlashCmdList["DEATHLAPSE"] = function(msg)
 end
 
 -- ============================================================================
+-- Hyperlink Click Handler
+-- ============================================================================
+
+do
+    local _origSetItemRef = SetItemRef
+    SetItemRef = function(link, text, button, ...)
+        if type(link) == "string" and link:sub(1, 11) == "deathlapse:" then
+            local sender = link:sub(12)
+            local data   = receivedData[sender]
+            if not data then
+                Print("No recap data from " .. sender .. " — they may need to share again.")
+                return
+            end
+            local groups, maxHp, kName, kSpell = DeserializeRecap(data)
+            if not groups or #groups == 0 then
+                Print("Could not read recap from " .. sender .. ".")
+                return
+            end
+            deathGroups      = groups
+            playerMaxHp      = maxHp
+            killerName       = kName
+            killerSpell      = kSpell
+            deathTime        = groups[#groups].time
+            deathWindowStart = nil
+            Deathlapse:ShowTimeline()
+            Print("Showing |cffffcc00" .. sender .. "|r's death recap.")
+            return
+        end
+        return _origSetItemRef(link, text, button, ...)
+    end
+end
+
+-- ============================================================================
 -- Event Handling
 -- ============================================================================
 
@@ -1235,12 +1440,16 @@ eventFrame:RegisterEvent("PLAYER_ALIVE")
 eventFrame:RegisterEvent("PLAYER_UNGHOST")
 eventFrame:RegisterEvent("UNIT_MAXHEALTH")
 eventFrame:RegisterEvent("COMBAT_LOG_EVENT_UNFILTERED")
+eventFrame:RegisterEvent("CHAT_MSG_ADDON")
 
-eventFrame:SetScript("OnEvent", function(_, event, arg1)
+eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
     if event == "ADDON_LOADED" then
         if arg1 == addonName then
             playerGUID  = UnitGUID and UnitGUID("player") or nil
             playerMaxHp = (UnitHealthMax and UnitHealthMax("player")) or 1
+            if RegisterAddonMessagePrefix then
+                RegisterAddonMessagePrefix(ADDON_PREFIX)
+            end
             if GetMinimapSettings().show then
                 CreateMinimapButton(); UpdateMinimapButtonPosition()
             end
@@ -1261,6 +1470,8 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1)
         or event == "PLAYER_UNGHOST" then OnPlayerAlive()
     elseif event == "COMBAT_LOG_EVENT_UNFILTERED" then
         ParseCombatEvent()
+    elseif event == "CHAT_MSG_ADDON" then
+        HandleAddonMessage(arg1, arg2, arg4)
     end
 end)
 
