@@ -120,7 +120,9 @@ local function SetSolidColor(tex, r, g, b, a)
 end
 
 local function SetGradient(tex, orientation, r1, g1, b1, r2, g2, b2, alpha)
-    tex:SetTexture("Interface\\Buttons\\WHITE8X8")
+    -- Use inline solid-white (1,1,1,1) rather than a file path so the base
+    -- texture is guaranteed opaque regardless of how TBC loads the asset.
+    tex:SetTexture(1, 1, 1, 1)
     if tex.SetGradientAlpha then
         tex:SetGradientAlpha(orientation, r1, g1, b1, alpha, r2, g2, b2, alpha)
     else
@@ -940,7 +942,7 @@ local function CreateTimelineFrame()
     f.nowLbl = nowLbl
 
     -- Texture pools on chart
-    chart.bluePool      = MakePoolTextures(chart, "ARTWORK",     MAX_GROUPS + 4)
+    chart.bluePool      = MakePoolTextures(chart, "BORDER",      MAX_GROUPS + 4)
     chart.capPool       = MakePoolTextures(chart, "ARTWORK",     MAX_GROUPS + 4)
     chart.linePool      = MakePoolTextures(chart, "OVERLAY",     MAX_GROUPS + 4)
     chart.borderPool    = MakePoolTextures(chart, "BACKGROUND",  MAX_GROUPS + 4)
