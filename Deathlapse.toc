@@ -2,7 +2,7 @@
 ## Title: Deathlapse
 ## Notes: HotS-style death recap waterfall for the final moments before you died.
 ## Author: voc0der
-## Version: 1.1.6
+## Version: 1.1.7
 ## X-Website: https://github.com/voc0der/Deathlapse
 ## X-Curse-Project-ID: 1523591
 ## SavedVariables: DeathlapseDB
