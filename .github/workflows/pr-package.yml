@@ -27,9 +27,12 @@ jobs:
         shell: bash
         run: bash ./.github/scripts/verify-release-package.sh
 
+      - name: Install Lua
+        run: sudo apt-get install -y lua5.1
+
       - name: Run syntax check
         shell: bash
-        run: luac -p Deathlapse.lua
+        run: luac5.1 -p Deathlapse.lua
 
       - name: Build addon package
         shell: bash
