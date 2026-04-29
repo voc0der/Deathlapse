@@ -225,6 +225,9 @@ local function ApplyElvUISkin(frame)
     if skins and frame.CloseButton and type(skins.HandleCloseButton) == "function" then
         pcall(function() skins:HandleCloseButton(frame.CloseButton) end)
     end
+    if skins and frame.linkBtn and type(skins.HandleButton) == "function" then
+        pcall(function() skins:HandleButton(frame.linkBtn) end)
+    end
 
     frame.deathlapseElvUISkinned = true
     return true
@@ -998,34 +1001,36 @@ local function CreateTimelineFrame()
     end)
     hover:SetScript("OnLeave", function() GameTooltip:Hide() end)
 
-    -- Link / share button (bottom-left corner)
-    local linkBtn = CreateFrame("Button", nil, f, "BackdropTemplate")
-    linkBtn:SetSize(42, 16)
-    linkBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 7)
+    -- Share button (bottom-left corner) — standard Blizzard panel button, red-tinted, chain icon.
+    local linkBtn = CreateFrame("Button", "DeathlapseShareButton", f, "UIPanelButtonTemplate")
+    linkBtn:SetSize(26, 22)
+    linkBtn:SetPoint("BOTTOMLEFT", f, "BOTTOMLEFT", 8, 5)
     linkBtn:SetFrameLevel(f:GetFrameLevel() + 5)
-    linkBtn:SetBackdrop({
-        bgFile   = "Interface\\ChatFrame\\ChatFrameBackground",
-        edgeFile = "Interface\\Tooltips\\UI-Tooltip-Border",
-        edgeSize = 8,
-        insets   = {left=2, right=2, top=2, bottom=2},
-    })
-    linkBtn:SetBackdropColor(0.08, 0.13, 0.30, 0.88)
-    linkBtn:SetBackdropBorderColor(0.28, 0.48, 0.82, 0.72)
-    local linkLabel = linkBtn:CreateFontString(nil, "OVERLAY", "GameFontNormalSmall")
-    linkLabel:SetAllPoints()
-    linkLabel:SetText("|cff6fa8dc[Link]|r")
+    if linkBtn.Text then linkBtn.Text:SetText("") end
+
+    -- Red vertex color on the three button-cap textures (non-ElvUI path).
+    for _, key in ipairs({"Left", "Middle", "Right"}) do
+        if linkBtn[key] and linkBtn[key].SetVertexColor then
+            linkBtn[key]:SetVertexColor(0.72, 0.13, 0.13)
+        end
+    end
+
+    -- Chain/link glyph centered inside the button.
+    local linkIcon = linkBtn:CreateTexture(nil, "OVERLAY")
+    linkIcon:SetTexture("Interface\\Icons\\INV_Misc_Chain_01")
+    linkIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    linkIcon:SetSize(14, 14)
+    linkIcon:SetPoint("CENTER")
+    linkBtn.linkIcon = linkIcon
+
     linkBtn:SetScript("OnEnter", function(self)
-        if self.SetBackdropBorderColor then self:SetBackdropBorderColor(0.55, 0.78, 1.0, 1.0) end
         GameTooltip:SetOwner(self, "ANCHOR_TOP")
         GameTooltip:SetText("|cff88ccffShare Recap|r")
         GameTooltip:AddLine("Broadcasts your death recap to the group.", 1, 1, 1)
         GameTooltip:AddLine("Others with Deathlapse can click to view.", 0.65, 0.65, 0.65)
         GameTooltip:Show()
     end)
-    linkBtn:SetScript("OnLeave", function(self)
-        if self.SetBackdropBorderColor then self:SetBackdropBorderColor(0.28, 0.48, 0.82, 0.72) end
-        GameTooltip:Hide()
-    end)
+    linkBtn:SetScript("OnLeave", function() GameTooltip:Hide() end)
     linkBtn:SetScript("OnClick", function() Deathlapse:ShareRecap() end)
     f.linkBtn = linkBtn
 
