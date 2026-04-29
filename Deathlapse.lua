@@ -1017,10 +1017,9 @@ local function CreateTimelineFrame()
         end
     end
 
-    -- Chain/link glyph centered inside the button.
+    -- Broadcast glyph — the same icon Classic FriendsFrame uses for status broadcast.
     local linkIcon = linkBtn:CreateTexture(nil, "OVERLAY")
-    linkIcon:SetTexture("Interface\\Icons\\INV_Misc_Chain_01")
-    linkIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+    linkIcon:SetTexture("Interface\\FriendsFrame\\BroadcastIcon")
     linkIcon:SetSize(14, 14)
     linkIcon:SetPoint("CENTER")
     linkBtn.linkIcon = linkIcon
