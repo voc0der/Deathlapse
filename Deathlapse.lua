@@ -1017,9 +1017,10 @@ local function CreateTimelineFrame()
         end
     end
 
-    -- Chain/link glyph centered inside the button.
+    -- Mail/send glyph — INV_Letter_15 is used by the TBC Minimap mail indicator,
+    -- so it is guaranteed to ship with TBC Anniversary.
     local linkIcon = linkBtn:CreateTexture(nil, "OVERLAY")
-    linkIcon:SetTexture("Interface\\Icons\\INV_Misc_Chain_01")
+    linkIcon:SetTexture("Interface\\Icons\\INV_Letter_15")
     linkIcon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
     linkIcon:SetSize(14, 14)
     linkIcon:SetPoint("CENTER")

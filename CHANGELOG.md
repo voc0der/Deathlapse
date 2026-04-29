@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [1.1.9] - 2026-04-29
+
+### Fixed
+- Share button icon now uses INV_Letter_15 (TBC Minimap mail glyph) — previous paths were not present in the TBC Anniversary client
+
 ## [1.1.8] - 2026-04-29
 
 ### Fixed
