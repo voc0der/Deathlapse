@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [1.1.8] - 2026-04-29
+
+### Fixed
+- Share button glyph used an invalid icon path; replaced with BroadcastIcon from the Classic FriendsFrame (guaranteed to exist in TBC Anniversary)
+
 ## [1.1.7] - 2026-04-29
 
 ### Changed
