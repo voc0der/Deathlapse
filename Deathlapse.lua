@@ -46,8 +46,8 @@ local FRAME_W            = FRAME_DEFAULT_W
 local FRAME_H            = FRAME_DEFAULT_H
 local CHART_W            = FRAME_W - CHART_LEFT - CHART_RIGHT
 local MIN_COL_W          = 18
-local ICON_MIN_SIZE      = 14
-local ICON_MAX_SIZE      = 24
+local ICON_MIN_SIZE      = 16
+local ICON_MAX_SIZE      = 28
 
 local MELEE_ICON         = "Interface\\Icons\\Ability_MeleeDamage"
 local ENV_ICON           = "Interface\\Icons\\Spell_Nature_Drowning"
@@ -117,6 +117,15 @@ end
 local function SetSolidColor(tex, r, g, b, a)
     if tex.SetColorTexture then tex:SetColorTexture(r, g, b, a)
     else tex:SetTexture(r, g, b, a) end
+end
+
+local function SetGradient(tex, orientation, r1, g1, b1, r2, g2, b2, alpha)
+    tex:SetTexture("Interface\\Buttons\\WHITE8X8")
+    if tex.SetGradientAlpha then
+        tex:SetGradientAlpha(orientation, r1, g1, b1, alpha, r2, g2, b2, alpha)
+    else
+        SetSolidColor(tex, (r1 + r2) * 0.5, (g1 + g2) * 0.5, (b1 + b2) * 0.5, alpha)
+    end
 end
 
 local function ClampValue(v, lo, hi)
@@ -928,14 +937,15 @@ local function CreateTimelineFrame()
     f.nowLbl = nowLbl
 
     -- Texture pools on chart
-    chart.bluePool  = MakePoolTextures(chart, "ARTWORK",  MAX_GROUPS + 4)
-    chart.capPool   = MakePoolTextures(chart, "ARTWORK",  MAX_GROUPS + 4)
-    chart.linePool  = MakePoolTextures(chart, "OVERLAY",  MAX_GROUPS + 4)
-    chart.borderPool= MakePoolTextures(chart, "BACKGROUND", MAX_GROUPS + 4)
-    chart.iconPool  = MakePoolTextures(chart, "OVERLAY",  MAX_GROUPS + 4)
-    chart.countFS   = MakePoolFS(chart, "GameFontNormalSmall", MAX_GROUPS + 4)
-    chart.timeFS    = MakePoolFS(chart, "GameFontDisableSmall", MAX_GROUPS + 4)
-    chart.srcFS     = MakePoolFS(chart, "GameFontDisableSmall", MAX_GROUPS + 4)
+    chart.bluePool      = MakePoolTextures(chart, "ARTWORK",     MAX_GROUPS + 4)
+    chart.capPool       = MakePoolTextures(chart, "ARTWORK",     MAX_GROUPS + 4)
+    chart.linePool      = MakePoolTextures(chart, "OVERLAY",     MAX_GROUPS + 4)
+    chart.borderPool    = MakePoolTextures(chart, "BACKGROUND",  MAX_GROUPS + 4)
+    chart.iconBorderPool= MakePoolTextures(chart, "ARTWORK",     MAX_GROUPS + 4)
+    chart.iconPool      = MakePoolTextures(chart, "OVERLAY",     MAX_GROUPS + 4)
+    chart.countFS       = MakePoolFS(chart, "GameFontNormalSmall",   MAX_GROUPS + 4)
+    chart.timeFS        = MakePoolFS(chart, "GameFontDisableSmall",  MAX_GROUPS + 4)
+    chart.srcFS         = MakePoolFS(chart, "GameFontDisableSmall",  MAX_GROUPS + 4)
 
     -- Hover overlay
     local hover = CreateFrame("Frame", nil, chart)
@@ -1058,6 +1068,7 @@ RenderTimeline = function()
     ResetPool(chart.capPool)
     ResetPool(chart.linePool)
     ResetPool(chart.borderPool)
+    ResetPool(chart.iconBorderPool)
     ResetPool(chart.iconPool)
     ResetPool(chart.countFS)
     ResetPool(chart.timeFS)
@@ -1112,10 +1123,11 @@ RenderTimeline = function()
     local hpBefore, hpAfter = ComputeHpTrajectory(deathGroups, playerMaxHp)
     local layout = timelineFrame.layout or GetLayout()
 
-    local nCols = #deathGroups
-    local colW  = Deathlapse.ColWidth(nCols, layout.chartW)
-    local barW  = math.max(7, colW - (colW >= 24 and 6 or 4))
-    local iconSize = ClampValue(colW - 4, ICON_MIN_SIZE, ICON_MAX_SIZE)
+    local nCols   = #deathGroups
+    local colW    = Deathlapse.ColWidth(nCols, layout.chartW)
+    local colSize = ClampValue(colW - 2, ICON_MIN_SIZE, ICON_MAX_SIZE)
+    local barW    = colSize
+    local iconSize = colSize
     local timeEvery = (colW >= 34) and 1 or math.max(2, math.ceil(34 / math.max(colW, 1)))
 
     for i, g in ipairs(deathGroups) do
@@ -1130,16 +1142,26 @@ RenderTimeline = function()
         local yBot = layout.chartH                       -- bottom of chart (0% HP)
 
         -- Blue bar: from hpAfter level down to 0%
+        -- Subtle column track behind the bar (full height, same width as bar + 2px border).
+        local borderTex = chart.borderPool[i]
+        if borderTex then
+            borderTex:SetSize(colSize + 2, yBot)
+            borderTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx - 1, 0)
+            SetSolidColor(borderTex, 0, 0, 0, 0.22)
+            borderTex:Show()
+        end
+
+        -- Blue bar: from hpAfter level down to 0% — gradient lighter at top (more HP), darker near death.
         local blueH = math.max(1, yBot - yA)
         local blueTex = chart.bluePool[i]
         if blueTex then
             blueTex:SetSize(barW, blueH)
             blueTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx, -yA)
-            SetSolidColor(blueTex, COLOR_HP_BLUE[1], COLOR_HP_BLUE[2], COLOR_HP_BLUE[3], 0.78)
+            SetGradient(blueTex, "VERTICAL", 0.08, 0.20, 0.46, 0.20, 0.50, 0.88, 0.82)
             blueTex:Show()
         end
 
-        -- Cap: from hpAfter to hpBefore (damage = red, heal = green)
+        -- Cap: from hpAfter to hpBefore (damage = red, heal = green) with gradient.
         if math.abs(yB - yA) >= 1 then
             local capTex = chart.capPool[i]
             if capTex then
@@ -1148,36 +1170,39 @@ RenderTimeline = function()
                 capTex:SetSize(barW, math.max(1, capH))
                 capTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx, -capTop)
                 if g.isHeal then
-                    SetSolidColor(capTex, COLOR_HEAL_GRN[1], COLOR_HEAL_GRN[2], COLOR_HEAL_GRN[3], 0.78)
+                    SetGradient(capTex, "VERTICAL", 0.10, 0.46, 0.22, 0.22, 0.82, 0.40, 0.82)
+                elseif g.overkill > 0 then
+                    local alpha = g.hasCrit and 0.95 or 0.88
+                    SetGradient(capTex, "VERTICAL", 0.65, 0.06, 0.06, 0.98, 0.12, 0.12, alpha)
                 else
-                    local col = (g.overkill > 0) and {0.90, 0.06, 0.07} or COLOR_DMG_RED
-                    SetSolidColor(capTex, col[1], col[2], col[3], g.hasCrit and 0.92 or 0.78)
+                    local alpha = g.hasCrit and 0.92 or 0.82
+                    SetGradient(capTex, "VERTICAL", 0.50, 0.08, 0.08, 0.88, 0.18, 0.18, alpha)
                 end
                 capTex:Show()
             end
         end
 
-        -- White separator line at hpAfter level
+        -- White separator line at hpAfter level.
         local lineTex = chart.linePool[i]
         if lineTex and yA < yBot then
             lineTex:SetSize(barW, 1)
             lineTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx, -yA)
-            SetSolidColor(lineTex, COLOR_HP_LINE[1], COLOR_HP_LINE[2], COLOR_HP_LINE[3], 0.70)
+            SetSolidColor(lineTex, COLOR_HP_LINE[1], COLOR_HP_LINE[2], COLOR_HP_LINE[3], 0.75)
             lineTex:Show()
         end
 
-        -- Subtle column track behind the bar.
-        local borderTex = chart.borderPool[i]
-        if borderTex then
-            borderTex:SetSize(barW + 2, yBot)
-            borderTex:SetPoint("TOPLEFT", chart, "TOPLEFT", bx - 1, 0)
-            SetSolidColor(borderTex, 0, 0, 0, 0.18)
-            borderTex:Show()
-        end
-
-        -- Icon below the bar
+        -- Icon below the bar — 1px dark border frame then icon on top.
         local iconRowY = layout.iconTop
         local iconX = cx - math.floor(iconSize / 2)
+
+        local iconBorderTex = chart.iconBorderPool[i]
+        if iconBorderTex then
+            iconBorderTex:SetSize(iconSize + 2, iconSize + 2)
+            iconBorderTex:SetPoint("TOPLEFT", chart, "TOPLEFT", iconX - 1, iconRowY + 1)
+            SetSolidColor(iconBorderTex, 0, 0, 0, 0.80)
+            iconBorderTex:Show()
+        end
+
         local iconTex = chart.iconPool[i]
         if iconTex then
             local iconPath = GetEventIcon(g.iconEv or {spellId=g.spellId, subevent=g.subevent})
