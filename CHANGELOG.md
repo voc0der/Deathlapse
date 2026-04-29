@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+## [1.1.7] - 2026-04-29
+
+### Changed
+- Share button now uses standard Blizzard panel button (UIPanelButtonTemplate) with red tint and chain-link icon glyph; ElvUI skinned automatically when present
+
+### Fixed
+- Heal cap rendered blue instead of green — moved HP bar pool to BORDER layer so damage/heal caps in ARTWORK always render on top regardless of TBC Classic's texture ordering
+
 ## [1.1.6] - 2026-04-29
 
 ### Changed
