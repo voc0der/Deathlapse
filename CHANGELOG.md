@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [1.1.6] - 2026-04-29
+
+### Changed
+- Modernized chart visuals: gradient bars (HP bar, damage/heal caps), unified bar and icon width per column, 1px dark border around spell icons
+- Raised icon size range for better readability at wider frame widths
+
 ## [1.1.5] - 2026-04-27
 
 ### Added
