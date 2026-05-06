@@ -1,5 +1,11 @@
 ## [Unreleased]
 
+## [1.1.10] - 2026-05-06
+
+### Fixed
+- Share recap now uses the current TBC Anniversary `C_ChatInfo` addon-message APIs, with legacy fallbacks for older clients
+- Share recap no longer posts an unusable `/say` marker when solo; addon recap data is sent only in party or raid channels
+
 ## [1.1.9] - 2026-04-29
 
 ### Fixed

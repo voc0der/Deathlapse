@@ -90,6 +90,7 @@ local killerName     = nil
 local killerSpell    = nil
 local receivedChunks = {}
 local receivedData   = {}
+local addonPrefixRegistered = false
 local minimapButton  = nil
 local timelineFrame = nil
 
@@ -427,6 +428,115 @@ end
 -- Link Sharing
 -- ============================================================================
 
+local REGISTER_PREFIX_RESULT_NAMES = {
+    [0] = "success",
+    [1] = "duplicate prefix",
+    [2] = "invalid prefix",
+    [3] = "too many prefixes",
+}
+
+local SEND_ADDON_RESULT_NAMES = {
+    [0]  = "success",
+    [1]  = "invalid prefix",
+    [2]  = "invalid message",
+    [3]  = "addon message throttle",
+    [4]  = "invalid chat type",
+    [5]  = "not in group",
+    [6]  = "target required",
+    [7]  = "invalid channel",
+    [8]  = "channel throttle",
+    [9]  = "general error",
+    [10] = "not in guild",
+}
+
+local function ResultName(names, result)
+    if result == nil then return "unknown error" end
+    return names[result] or tostring(result)
+end
+
+local function IsSuccessResult(result)
+    return result == nil or result == true or result == 0
+end
+
+local function GetRegisterAddonMessagePrefix()
+    if type(C_ChatInfo) == "table" and type(C_ChatInfo.RegisterAddonMessagePrefix) == "function" then
+        return C_ChatInfo.RegisterAddonMessagePrefix
+    end
+    if type(RegisterAddonMessagePrefix) == "function" then
+        return RegisterAddonMessagePrefix
+    end
+    return nil
+end
+
+local function GetSendAddonMessage()
+    if type(C_ChatInfo) == "table" and type(C_ChatInfo.SendAddonMessage) == "function" then
+        return C_ChatInfo.SendAddonMessage
+    end
+    if type(SendAddonMessage) == "function" then
+        return SendAddonMessage
+    end
+    return nil
+end
+
+local function GetSendChatMessage()
+    if type(C_ChatInfo) == "table" and type(C_ChatInfo.SendChatMessage) == "function" then
+        return C_ChatInfo.SendChatMessage
+    end
+    if type(SendChatMessage) == "function" then
+        return SendChatMessage
+    end
+    return nil
+end
+
+local function RegisterAddonPrefix()
+    if addonPrefixRegistered then return true end
+
+    local fn = GetRegisterAddonMessagePrefix()
+    if not fn then
+        return false, "addon message registration API unavailable"
+    end
+
+    local ok, result = pcall(fn, ADDON_PREFIX)
+    if not ok then return false, tostring(result) end
+    if IsSuccessResult(result) or result == 1 then
+        addonPrefixRegistered = true
+        return true
+    end
+    return false, "prefix registration failed: " .. ResultName(REGISTER_PREFIX_RESULT_NAMES, result)
+end
+
+local function SendAddonPayload(payload, channel)
+    local registered, registerErr = RegisterAddonPrefix()
+    if not registered then return false, registerErr end
+
+    local fn = GetSendAddonMessage()
+    if not fn then
+        return false, "addon message send API unavailable"
+    end
+
+    local ok, result = pcall(fn, ADDON_PREFIX, payload, channel)
+    if not ok then return false, tostring(result) end
+    if IsSuccessResult(result) then return true end
+    return false, ResultName(SEND_ADDON_RESULT_NAMES, result)
+end
+
+local function SendChatPayload(payload, channel)
+    local fn = GetSendChatMessage()
+    if not fn then
+        return false, "chat send API unavailable"
+    end
+
+    local ok, err = pcall(fn, payload, channel)
+    if ok then return true end
+    return false, tostring(err)
+end
+
+local function GetShareChannel()
+    if IsInRaid and IsInRaid() then return "RAID" end
+    if IsInGroup and IsInGroup() then return "PARTY" end
+    return nil
+end
+
 local function SerializeRecap()
     if not deathGroups or #deathGroups == 0 then return nil end
     local dt = deathTime or GetTime()
@@ -535,6 +645,13 @@ function Deathlapse:ShareRecap()
         Print("No death recap to share.")
         return
     end
+
+    local channel = GetShareChannel()
+    if not channel then
+        Print("Join a party or raid to share recaps; addon data cannot be sent in /say.")
+        return
+    end
+
     local data = SerializeRecap()
     if not data then return end
 
@@ -544,15 +661,22 @@ function Deathlapse:ShareRecap()
         i = i + LINK_CHUNK_SIZE
     end
 
-    local channel = (IsInRaid and IsInRaid()) and "RAID"
-                 or (IsInGroup and IsInGroup()) and "PARTY"
-                 or "SAY"
     for seq, chunk in ipairs(chunks) do
-        pcall(SendAddonMessage, ADDON_PREFIX, seq .. "/" .. #chunks .. "/" .. chunk, channel)
+        local ok, err = SendAddonPayload(seq .. "/" .. #chunks .. "/" .. chunk, channel)
+        if not ok then
+            Print("Could not share recap data in " .. channel .. ": " .. (err or "unknown error") .. ".")
+            return
+        end
     end
 
     local pName = (UnitName and UnitName("player")) or "Unknown"
-    pcall(SendChatMessage, "[Deathlapse Death Recap] by " .. pName, channel)
+    local chatOk, chatErr = SendChatPayload("[Deathlapse Death Recap] by " .. pName, channel)
+    if not chatOk then
+        Print("Recap data shared in " .. channel
+            .. " (" .. #chunks .. " packet" .. (#chunks > 1 and "s" or "") .. "), "
+            .. "but the chat marker could not be sent: " .. (chatErr or "unknown error") .. ".")
+        return
+    end
     Print("Recap shared in " .. channel
         .. " (" .. #chunks .. " packet" .. (#chunks > 1 and "s" or "") .. ").")
 end
@@ -1480,9 +1604,7 @@ eventFrame:SetScript("OnEvent", function(_, event, arg1, arg2, arg3, arg4)
         if arg1 == addonName then
             playerGUID  = UnitGUID and UnitGUID("player") or nil
             playerMaxHp = (UnitHealthMax and UnitHealthMax("player")) or 1
-            if RegisterAddonMessagePrefix then
-                RegisterAddonMessagePrefix(ADDON_PREFIX)
-            end
+            RegisterAddonPrefix()
             if GetMinimapSettings().show then
                 CreateMinimapButton(); UpdateMinimapButtonPosition()
             end
@@ -1526,7 +1648,9 @@ Deathlapse._internal = {
     GetLayout            = GetLayout,
     GetEventBuffer       = function() return eventBuffer end,
     SetEventBuffer       = function(t) eventBuffer = t end,
+    SetDeathGroups       = function(t) deathGroups = t end,
     SetDeathTime         = function(t) deathTime = t end,
+    SetPlayerMaxHp       = function(v) playerMaxHp = v end,
     TIMELINE_DURATION    = TIMELINE_DURATION,
     CANVAS_LEFT_PAD      = CHART_LEFT,
     TIMELINE_EFFECTIVE_W = CHART_W,
