@@ -22,7 +22,12 @@ local _time = 1000.0
 function GetTime() return _time end
 function UnitGUID(u) return u=="player" and "Player-1234-ABCDEF" or nil end
 function UnitHealthMax() return 10000 end
+function UnitName() return "Tester" end
 function CombatLogGetCurrentEventInfo() return nil end
+local inRaid = false
+local inGroup = false
+function IsInRaid() return inRaid end
+function IsInGroup() return inGroup end
 
 local function stub_frame()
     local f = {_shown=true, _scripts={}, _events={}}
@@ -43,6 +48,34 @@ function CreateFrame() return stub_frame() end
 local chatMessages = {}
 DEFAULT_CHAT_FRAME = {
     AddMessage = function(_, msg) chatMessages[#chatMessages + 1] = msg end,
+}
+local addonMessages = {}
+local sentChatMessages = {}
+local addonSendResult = 0
+local prefixRegisterResult = 0
+C_ChatInfo = {
+    RegisterAddonMessagePrefix = function(prefix)
+        C_ChatInfo.registeredPrefix = prefix
+        return prefixRegisterResult
+    end,
+    SendAddonMessage = function(prefix, message, chatType, target)
+        addonMessages[#addonMessages + 1] = {
+            prefix = prefix,
+            message = message,
+            chatType = chatType,
+            target = target,
+        }
+        return addonSendResult
+    end,
+    SendChatMessage = function(message, chatType, languageID, target)
+        sentChatMessages[#sentChatMessages + 1] = {
+            message = message,
+            chatType = chatType,
+            languageID = languageID,
+            target = target,
+        }
+        return 0
+    end,
 }
 DeathlapseDB = {}
 SlashCmdList = {}
@@ -252,6 +285,70 @@ s2[2].srcName="Onyxia"; s2[2].spellName="Melee"; s2[2].overkill=800
 local k2,sp2 = I.FindKiller(s2)
 ok(k2=="Onyxia",  "FindKiller: prefers overkill")
 ok(sp2==nil,      "FindKiller: Melee → nil spell")
+
+-- ============================================================================
+-- Sharing
+-- ============================================================================
+print("\n-- Sharing --")
+local function resetSharing()
+    inRaid = false
+    inGroup = false
+    addonMessages = {}
+    sentChatMessages = {}
+    chatMessages = {}
+    addonSendResult = 0
+    prefixRegisterResult = 0
+    C_ChatInfo.registeredPrefix = nil
+    I.SetPlayerMaxHp(10000)
+    I.SetDeathTime(1000)
+    I.SetDeathGroups({
+        {
+            time = 996,
+            lastTime = 996,
+            srcName = "Mage",
+            spellName = "Fireball",
+            spellId = 133,
+            school = 0x04,
+            isHeal = false,
+            totalAmount = 2500,
+            count = 1,
+            hasCrit = false,
+            overkill = 0,
+            overheal = 0,
+        },
+    })
+end
+
+resetSharing()
+Deathlapse:ShareRecap()
+ok(#addonMessages == 0, "solo share does not send addon data")
+ok(#sentChatMessages == 0, "solo share does not post unusable chat marker")
+ok(chatMessages[#chatMessages] and string.find(chatMessages[#chatMessages], "party or raid", 1, true),
+   "solo share explains group requirement")
+
+resetSharing()
+inGroup = true
+Deathlapse:ShareRecap()
+ok(C_ChatInfo.registeredPrefix == "DLAPSE", "share registers addon prefix through C_ChatInfo")
+ok(#addonMessages > 0, "party share sends addon data")
+ok(addonMessages[1].prefix == "DLAPSE", "party share uses addon prefix")
+ok(addonMessages[1].chatType == "PARTY", "party share uses PARTY addon channel")
+ok(#sentChatMessages == 1 and sentChatMessages[1].chatType == "PARTY",
+   "party share posts chat marker after addon data")
+
+resetSharing()
+inRaid = true
+inGroup = true
+Deathlapse:ShareRecap()
+ok(addonMessages[1] and addonMessages[1].chatType == "RAID", "raid share prefers RAID channel")
+
+resetSharing()
+inGroup = true
+addonSendResult = 4
+Deathlapse:ShareRecap()
+ok(#sentChatMessages == 0, "failed addon send suppresses chat marker")
+ok(chatMessages[#chatMessages] and string.find(chatMessages[#chatMessages], "invalid chat type", 1, true),
+   "failed addon send reports result")
 
 -- ============================================================================
 print(string.format("\n%d passed, %d failed", passed, failed))
