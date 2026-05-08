@@ -110,6 +110,14 @@ print("\n-- Slash Commands --")
 SlashCmdList["DEATHLAPSE"]("about")
 ok(chatMessages[1] and string.find(chatMessages[1], "voc0der", 1, true), "about prints author")
 ok(chatMessages[2] and string.find(chatMessages[2], "https://github.com/voc0der/Deathlapse", 1, true), "about prints GitHub URL")
+SlashCmdList["DEATHLAPSE"]("help")
+ok(chatMessages[3] and string.find(chatMessages[3], "/dl show", 1, true), "help prints slash commands")
+ok(chatMessages[4] and string.find(chatMessages[4], "right-click opens options", 1, true), "help mentions minimap menu")
+DeathlapseDB.minimap = { show = true }
+SlashCmdList["DEATHLAPSE"]("minimap")
+ok(DeathlapseDB.minimap.show == false, "minimap command hides button preference")
+ok(chatMessages[5] and string.find(chatMessages[5], "Use /dl minimap to bring it back", 1, true),
+   "minimap hide explains restore command")
 
 -- ============================================================================
 -- SafeNumber

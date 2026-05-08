@@ -92,7 +92,15 @@ local receivedChunks = {}
 local receivedData   = {}
 local addonPrefixRegistered = false
 local minimapButton  = nil
+local minimapMenu    = nil
 local timelineFrame = nil
+local ShowMinimapMenu
+local ToggleMinimapButtonVisibility
+local ToggleAutoShowOnDeath
+local ResetTimelinePosition
+local ShowTestTimeline
+local PrintAbout
+local PrintHelp
 
 -- ============================================================================
 -- Utility
@@ -764,6 +772,102 @@ local function UpdateMinimapButtonPosition()
     minimapButton:SetPoint("CENTER", Minimap, "CENTER", math.cos(a)*80, math.sin(a)*80)
 end
 
+local function AddMinimapMenuSeparator(level)
+    if UIDropDownMenu_AddSeparator then
+        UIDropDownMenu_AddSeparator(level)
+    end
+end
+
+local function AddMinimapMenuButton(level, text, command, func, opts)
+    local info = UIDropDownMenu_CreateInfo()
+    info.text = text
+    info.func = func
+    info.notCheckable = true
+    info.disabled = opts and opts.disabled
+    info.tooltipWhileDisabled = 1
+    info.tooltipOnButton = 1
+    info.tooltipTitle = command and (text .. "  |cff888888" .. command .. "|r") or text
+    info.tooltipText = opts and opts.tooltipText
+    UIDropDownMenu_AddButton(info, level)
+end
+
+local function InitializeMinimapMenu(_, level)
+    if level ~= 1 then return end
+
+    local info = UIDropDownMenu_CreateInfo()
+    info.text = "Deathlapse"
+    info.isTitle = true
+    info.notCheckable = true
+    UIDropDownMenu_AddButton(info, level)
+
+    local hasDeathRecord = deathGroups and #deathGroups > 0
+
+    AddMinimapMenuButton(level, "Show Recap", "/dl show", function()
+        Deathlapse:ShowTimeline()
+    end)
+    AddMinimapMenuButton(level, "Hide Recap", "/dl hide", function()
+        Deathlapse:HideTimeline()
+    end)
+    AddMinimapMenuButton(level, "Clear Death Record", "/dl clear", function()
+        Deathlapse:ClearSnapshot()
+    end, {
+        disabled = not hasDeathRecord,
+        tooltipText = hasDeathRecord and "Clear the current death record." or "No death record to clear yet.",
+    })
+
+    AddMinimapMenuSeparator(level)
+
+    AddMinimapMenuButton(level, "About Deathlapse", "/dl about", function()
+        PrintAbout()
+    end)
+
+    local minimapShown = GetMinimapSettings().show ~= false
+    AddMinimapMenuButton(level, minimapShown and "Hide Minimap Button" or "Show Minimap Button", "/dl minimap", function()
+        ToggleMinimapButtonVisibility()
+    end, {
+        tooltipText = minimapShown and "Hides this button and prints the chat command to restore it." or "Shows the minimap button.",
+    })
+
+    info = UIDropDownMenu_CreateInfo()
+    info.text = "Auto-show on Death"
+    info.func = function() ToggleAutoShowOnDeath() end
+    info.checked = GetMinimapSettings().showOnDeath ~= false
+    info.tooltipOnButton = 1
+    info.tooltipTitle = "Auto-show on Death  |cff888888/dl autoshow|r"
+    info.tooltipText = "Toggle whether the recap appears automatically when you die."
+    UIDropDownMenu_AddButton(info, level)
+
+    AddMinimapMenuButton(level, "Reset Recap Window", "/dl reset", function()
+        ResetTimelinePosition()
+    end)
+    AddMinimapMenuButton(level, "Show Test Recap", "/dl test", function()
+        ShowTestTimeline()
+    end)
+    AddMinimapMenuButton(level, "Help", "/dl help", function()
+        PrintHelp()
+    end)
+end
+
+local function EnsureMinimapMenu()
+    if minimapMenu then return true end
+    if not (UIDropDownMenu_CreateInfo and UIDropDownMenu_Initialize
+        and UIDropDownMenu_AddButton and ToggleDropDownMenu) then
+        return false
+    end
+
+    minimapMenu = CreateFrame("Frame", "DeathlapseMinimapMenu", UIParent, "UIDropDownMenuTemplate")
+    UIDropDownMenu_Initialize(minimapMenu, InitializeMinimapMenu, "MENU")
+    return true
+end
+
+ShowMinimapMenu = function()
+    if EnsureMinimapMenu() then
+        ToggleDropDownMenu(1, nil, minimapMenu, "cursor", 0, 0)
+    elseif PrintHelp then
+        PrintHelp()
+    end
+end
+
 local function CreateMinimapButton()
     if minimapButton then return end
 
@@ -794,11 +898,12 @@ local function CreateMinimapButton()
     minimapButton:SetScript("OnEnter", function(self)
         GameTooltip:SetOwner(self, "ANCHOR_LEFT")
         GameTooltip:SetText("|cffcc3333Deathlapse|r")
+        GameTooltip:AddLine("Left-click to show or hide recap", 1, 1, 1)
+        GameTooltip:AddLine("Right-click for options", 0.7, 0.7, 0.7)
+        GameTooltip:AddLine("Drag to move", 0.6, 0.6, 0.6)
         if deathGroups and #deathGroups > 0 then
-            GameTooltip:AddLine("Left-click to toggle recap", 1, 1, 1)
-            GameTooltip:AddLine("Right-click to clear", 0.7, 0.7, 0.7)
+            GameTooltip:AddLine("Death record available", 0.9, 0.5, 0.5)
         else
-            GameTooltip:AddLine("Recap appears on death", 0.6, 0.6, 0.6)
             GameTooltip:AddLine("/dl test to preview", 0.5, 0.5, 0.5)
         end
         GameTooltip:Show()
@@ -808,7 +913,10 @@ local function CreateMinimapButton()
     minimapButton:RegisterForClicks("LeftButtonUp", "RightButtonUp")
     minimapButton:SetScript("OnClick", function(_, btn)
         if btn == "LeftButton" then Deathlapse:ToggleTimeline()
-        else Deathlapse:ClearSnapshot() end
+        else
+            GameTooltip:Hide()
+            ShowMinimapMenu()
+        end
     end)
 
     minimapButton:RegisterForDrag("LeftButton")
@@ -1496,14 +1604,59 @@ local function GenerateTestSnapshot()
     killerName, killerSpell = FindKiller(events)
 end
 
--- ============================================================================
--- Slash Commands
--- ============================================================================
-
-local function PrintAbout()
+PrintAbout = function()
     Print(addonName .. " by " .. addonAuthor)
     Print(addonWebsite)
 end
+
+ToggleMinimapButtonVisibility = function()
+    local s = GetMinimapSettings()
+    s.show = not s.show
+    if s.show then
+        if not minimapButton then CreateMinimapButton() end
+        minimapButton:Show()
+        UpdateMinimapButtonPosition()
+        Print("Minimap button shown.")
+    else
+        if minimapButton then minimapButton:Hide() end
+        Print("Minimap button hidden. Use /dl minimap to bring it back.")
+    end
+end
+
+ToggleAutoShowOnDeath = function()
+    local s = GetMinimapSettings()
+    s.showOnDeath = not (s.showOnDeath ~= false)
+    Print("Auto-show on death: " .. (s.showOnDeath ~= false and "enabled" or "disabled"))
+end
+
+ResetTimelinePosition = function()
+    GetDB().timelinePosition = nil
+    GetDB().timelineSize = nil
+    if timelineFrame then
+        timelineFrame:ClearAllPoints()
+        timelineFrame:SetSize(FRAME_DEFAULT_W, FRAME_DEFAULT_H)
+        timelineFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
+        LayoutTimelineFrame(timelineFrame)
+        RenderTimeline()
+    end
+    Print("Timeline position and size reset.")
+end
+
+ShowTestTimeline = function()
+    GenerateTestSnapshot()
+    Deathlapse:UpdateMinimapIndicator()
+    Deathlapse:ShowTimeline()
+    Print("Showing test data.")
+end
+
+PrintHelp = function()
+    Print("Commands: /dl show | /dl hide | /dl clear | /dl about | /dl minimap | /dl autoshow | /dl reset | /dl test | /dl help")
+    Print("Minimap: left-click toggles the recap; right-click opens options.")
+end
+
+-- ============================================================================
+-- Slash Commands
+-- ============================================================================
 
 SLASH_DEATHLAPSE1 = "/deathlapse"
 SLASH_DEATHLAPSE2 = "/dl"
@@ -1516,39 +1669,11 @@ SlashCmdList["DEATHLAPSE"] = function(msg)
     elseif cmd == "hide"     then Deathlapse:HideTimeline()
     elseif cmd == "clear"    then Deathlapse:ClearSnapshot()
     elseif cmd == "about"    then PrintAbout()
-    elseif cmd == "minimap" or cmd == "mm" then
-        local s = GetMinimapSettings()
-        s.show = not s.show
-        if s.show then
-            if not minimapButton then CreateMinimapButton() end
-            minimapButton:Show(); UpdateMinimapButtonPosition()
-            Print("Minimap button shown.")
-        else
-            if minimapButton then minimapButton:Hide() end
-            Print("Minimap button hidden. /dl minimap to restore.")
-        end
-    elseif cmd == "autoshow" then
-        local s = GetMinimapSettings()
-        s.showOnDeath = not (s.showOnDeath ~= false)
-        Print("Auto-show on death: " .. (s.showOnDeath ~= false and "enabled" or "disabled"))
-    elseif cmd == "reset" then
-        GetDB().timelinePosition = nil
-        GetDB().timelineSize = nil
-        if timelineFrame then
-            timelineFrame:ClearAllPoints()
-            timelineFrame:SetSize(FRAME_DEFAULT_W, FRAME_DEFAULT_H)
-            timelineFrame:SetPoint("CENTER", UIParent, "CENTER", 0, 80)
-            LayoutTimelineFrame(timelineFrame)
-            RenderTimeline()
-        end
-        Print("Timeline position and size reset.")
-    elseif cmd == "test" then
-        GenerateTestSnapshot()
-        Deathlapse:UpdateMinimapIndicator()
-        Deathlapse:ShowTimeline()
-        Print("Showing test data.")
-    elseif cmd == "help" or cmd == "?" then
-        Print("Commands: show | hide | clear | about | minimap | autoshow | reset | test | help")
+    elseif cmd == "minimap" or cmd == "mm" then ToggleMinimapButtonVisibility()
+    elseif cmd == "autoshow" then ToggleAutoShowOnDeath()
+    elseif cmd == "reset" then ResetTimelinePosition()
+    elseif cmd == "test" then ShowTestTimeline()
+    elseif cmd == "help" or cmd == "?" then PrintHelp()
     else Deathlapse:ToggleTimeline() end
 end
 
