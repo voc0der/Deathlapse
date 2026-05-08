@@ -8,9 +8,9 @@ A death-recap timeline for WoW TBC Anniversary Classic.
 
 When you die, a waterfall chart appears showing the meaningful final stretch of damage and healing before it happened, up to 20 seconds. If the addon can tell you were recently topped off, it clips older noise and starts from that full-health point. Hover any column to see the source, spell, amount, and timing. The panel hides automatically when you're alive again.
 
-The entire addon lives on the minimap. A small skull button orbits it; click it to toggle the panel or drag it to reposition. A red dot appears on the button when death data is available. The recap frame can be moved and resized from the lower-right grip; ElvUI users get the ElvUI frame skin when available.
+The entire addon lives on the minimap. A small skull button orbits it; click it to toggle the panel, right-click it for command options, or drag it to reposition. A red dot appears on the button when death data is available. The recap frame can be moved and resized from the lower-right grip; ElvUI users get the ElvUI frame skin when available.
 
-Current version: `1.1.4`
+Current version: `1.1.11`
 
 <p align="center">
   <img src="assets/recap-screenshot.png" alt="Deathlapse death recap" width="600" />
@@ -34,7 +34,7 @@ Current version: `1.1.4`
 
 ## Usage
 
-The timeline appears automatically when you die. Hover bars for details. Click the minimap button to show or hide it manually.
+The timeline appears automatically when you die. Hover bars for details. Click the minimap button to show or hide it manually, or right-click it for the same options available as chat commands.
 
 Slash commands via `/deathlapse` or `/dl`:
 

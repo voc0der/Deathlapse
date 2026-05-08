@@ -1,5 +1,13 @@
 ## [Unreleased]
 
+## [1.1.11] - 2026-05-08
+
+### Added
+- Right-click minimap menu with recap show/hide, clear, about, minimap visibility, auto-show, reset, test, and help actions matching the slash commands
+
+### Changed
+- Hiding the minimap button now prints the `/dl minimap` restore hint from both chat and minimap menu paths
+
 ## [1.1.10] - 2026-05-06
 
 ### Fixed
