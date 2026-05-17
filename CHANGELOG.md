@@ -1,5 +1,10 @@
 ## [Unreleased]
 
+## [1.1.12] - 2026-05-17
+
+### Changed
+- Bumped release metadata for the TBC Anniversary `20505` TOC target.
+
 ## [1.1.11] - 2026-05-08
 
 ### Added
