@@ -5,7 +5,7 @@
 Deathlapse targets TBC Anniversary Classic. The TOC file specifies:
 
 ```
-## Interface: 20505
+## Interface: 20506
 ```
 
 ## Workflow Prerequisites

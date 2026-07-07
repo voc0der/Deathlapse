@@ -10,7 +10,7 @@ When you die, a waterfall chart appears showing the meaningful final stretch of 
 
 The entire addon lives on the minimap. A small skull button orbits it; click it to toggle the panel, right-click it for command options, or drag it to reposition. A red dot appears on the button when death data is available. The recap frame can be moved and resized from the lower-right grip; ElvUI users get the ElvUI frame skin when available.
 
-Current version: `1.1.12`
+Current version: `1.1.13`
 
 <p align="center">
   <img src="assets/recap-screenshot.png" alt="Deathlapse death recap" width="600" />
@@ -59,7 +59,7 @@ Release workflow notes are in [`RELEASING.md`](RELEASING.md).
 ## Scope
 
 - Target client: TBC Anniversary Classic
-- TOC interface: `20505`
+- TOC interface: `20506`
 
 ## Star History
 

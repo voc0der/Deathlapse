@@ -1,5 +1,16 @@
 ## [Unreleased]
 
+## [1.1.13] - 2026-07-07
+
+### Changed
+- Bumped TOC interface to `20506` for the TBC Anniversary `2.5.6` (68502) client patch.
+
+### Fixed
+- Prefer `C_CombatLog.GetCurrentEventInfo` over the now-deprecated `CombatLogGetCurrentEventInfo` global (Blizzard ships the legacy name only as an opt-out compatibility fallback as of `2.5.6`), falling back to the legacy global on older clients.
+
+### Tests
+- Verified against the `wow-ui-source` diff between `2.5.5` (68101) and `2.5.6` (68502).
+
 ## [1.1.12] - 2026-05-17
 
 ### Changed

@@ -693,14 +693,25 @@ end
 -- Combat Log Parsing
 -- ============================================================================
 
+local function GetCombatLogCurrentEventInfo()
+    if type(C_CombatLog) == "table" and type(C_CombatLog.GetCurrentEventInfo) == "function" then
+        return C_CombatLog.GetCurrentEventInfo
+    end
+    if type(CombatLogGetCurrentEventInfo) == "function" then
+        return CombatLogGetCurrentEventInfo
+    end
+    return nil
+end
+
 local function ParseCombatEvent()
-    if not CombatLogGetCurrentEventInfo then return end
+    local getCurrentEventInfo = GetCombatLogCurrentEventInfo()
+    if not getCurrentEventInfo then return end
 
     local _ts, subevent, _hid,
           srcGUID, srcName, _sf, _srf,
           dstGUID, _dn, _df, _drf,
           p1, p2, p3, p4, p5, p6, p7, p8, p9, p10
-          = CombatLogGetCurrentEventInfo()
+          = getCurrentEventInfo()
 
     if not subevent or not playerGUID then return end
 
