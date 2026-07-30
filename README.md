@@ -60,15 +60,3 @@ Release workflow notes are in [`RELEASING.md`](RELEASING.md).
 
 - Target client: TBC Anniversary Classic
 - TOC interface: `20506`
-
-## Star History
-
-<p align="center">
-  <a href="https://star-history.com/#voc0der/Deathlapse&Date">
-    <picture>
-      <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=voc0der/Deathlapse&type=Date&theme=dark" />
-      <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=voc0der/Deathlapse&type=Date" />
-      <img alt="Star History Chart" src="https://api.star-history.com/svg?repos=voc0der/Deathlapse&type=Date" />
-    </picture>
-  </a>
-</p>
